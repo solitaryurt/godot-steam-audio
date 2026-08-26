@@ -190,6 +190,11 @@ void SteamAudioProbeVolume::generate_probes() {
 	probe_core_release_batch(&batch);
 	probe_core_destroy_scene(&scene);
 	probe_core_destroy_context(&ctx);
+
+	if (!Engine::get_singleton()->is_editor_hint() && is_inside_tree()) {
+		unregister_batch();
+		register_batch();
+	}
 }
 
 void SteamAudioProbeVolume::bake_pathing() {
@@ -265,6 +270,11 @@ void SteamAudioProbeVolume::bake_pathing() {
 	probe_core_release_batch(&batch);
 	probe_core_destroy_scene(&scene);
 	probe_core_destroy_context(&ctx);
+
+	if (!Engine::get_singleton()->is_editor_hint() && is_inside_tree()) {
+		unregister_batch();
+		register_batch();
+	}
 }
 
 int SteamAudioProbeVolume::get_probe_count() const {

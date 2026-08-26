@@ -1,4 +1,4 @@
-[gd_scene load_steps=41 format=3 uid="uid://bilxmr83dwsgw"]
+[gd_scene load_steps=42 format=3 uid="uid://bilxmr83dwsgw"]
 
 [ext_resource type="Script" uid="uid://bsuex25ycqs6d" path="res://src/player.gd" id="1_c2adp"]
 [ext_resource type="SteamAudioMaterial" uid="uid://dbai50r63k346" path="res://addons/godot-steam-audio/materials/rock_material.tres" id="1_wtcfy"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://bjk65facr3ip3" path="res://src/random_pluck.gd" id="7_gx8pe"]
 [ext_resource type="Script" uid="uid://c0t67wh0txs7g" path="res://src/door.gd" id="8_jqgel"]
 [ext_resource type="PackedScene" uid="uid://b4t303yij1i0s" path="res://scenes/dynamic_test.tscn" id="10_nroe5"]
+[ext_resource type="Script" path="res://src/pathing_demo.gd" id="11_path"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_nkwlr"]
 
@@ -178,6 +179,15 @@ camera_attributes = SubResource("CameraAttributesPhysical_v0408")
 [node name="SteamAudioConfig" type="SteamAudioConfig" parent="."]
 scene_type = 0
 
+[node name="SteamAudioProbeVolume" type="SteamAudioProbeVolume" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+size = Vector3(28, 6, 36)
+spacing = 2.5
+height = 1.5
+vis_range = 30.0
+path_range = 40.0
+script = ExtResource("11_path")
+
 [node name="Ground" type="MeshInstance3D" parent="."]
 transform = Transform3D(200, 0, 0, 0, 200, 0, 0, 0, 200, 0, 0, 0)
 mesh = SubResource("PlaneMesh_8yuob")
@@ -207,6 +217,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 
 [node name="SteamAudioPlayer" type="SteamAudioPlayer" parent="Wooden House"]
 reflection = true
+pathing = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.0999999)
 stream = ExtResource("3_0iivb")
 volume_db = 20.0
@@ -231,6 +242,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -6)
 [node name="Pluck Randomizer" type="SteamAudioPlayer" parent="Wooden House with RandomStream" node_paths=PackedStringArray("anim")]
 min_attenuation_distance = 5.0
 reflection = true
+pathing = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 stream = SubResource("AudioStreamRandomizer_w72gs")
 volume_db = 20.0
@@ -261,6 +273,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -12)
 [node name="Pluck Randomizer" type="SteamAudioPlayer" parent="Door House" node_paths=PackedStringArray("anim")]
 min_attenuation_distance = 5.0
 reflection = true
+pathing = true
+pathing_validation = true
+pathing_find_alternate = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 stream = SubResource("AudioStreamRandomizer_w72gs")
 volume_db = 20.0
@@ -344,6 +359,7 @@ material = ExtResource("6_ph4pe")
 distance_attenuation = true
 min_attenuation_distance = 5.0
 reflection = true
+pathing = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.0999999)
 stream = ExtResource("3_0iivb")
 attenuation_model = 3
@@ -368,6 +384,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 11)
 
 [node name="SteamAudioPlayer3" type="SteamAudioPlayer" parent="Collider Test"]
 min_attenuation_distance = 5.0
+pathing = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1, 1)
 stream = ExtResource("3_0iivb")
 volume_db = 20.0
@@ -452,7 +469,8 @@ text = "[WASD] Move
 [Space] Jump
 [Mouse] Look around
 [1] Toggle door
-[2] Move door"
+[2] Move door
+Pathing: walk around houses; [1] tests door vs baked paths"
 fit_content = true
 scroll_active = false
 
