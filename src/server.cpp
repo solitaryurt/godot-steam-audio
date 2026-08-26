@@ -259,10 +259,17 @@ GlobalSteamAudioState *SteamAudioServer::get_global_state(bool should_init) {
 
 	global_state.audio_cfg = create_audio_cfg();
 	global_state.ctx = create_ctx();
+	if (global_state.ctx == nullptr) {
+		init_mux.unlock();
+		return nullptr;
+	}
 
 	IPLSceneSettings scene_cfg = create_scene_cfg(global_state.ctx);
-	IPLerror err = iplSceneCreate(global_state.ctx, &scene_cfg, &global_state.scene);
-	handleErr(err);
+	if (!handleErr(iplSceneCreate(global_state.ctx, &scene_cfg, &global_state.scene), "iplSceneCreate") ||
+			global_state.scene == nullptr) {
+		init_mux.unlock();
+		return nullptr;
+	}
 	for (auto m : static_meshes_to_add) {
 		iplStaticMeshAdd(m, global_state.scene);
 	}
@@ -275,6 +282,11 @@ GlobalSteamAudioState *SteamAudioServer::get_global_state(bool should_init) {
 			global_state.ctx, global_state.audio_cfg);
 	global_state.ambi_dec_effect = create_ambisonics_decode_effect(
 			global_state.ctx, global_state.audio_cfg, global_state.hrtf);
+	if (global_state.sim == nullptr || global_state.hrtf == nullptr ||
+			global_state.ambi_enc_effect == nullptr || global_state.ambi_dec_effect == nullptr) {
+		init_mux.unlock();
+		return nullptr;
+	}
 
 	iplSimulatorSetScene(global_state.sim, global_state.scene);
 	iplSimulatorCommit(global_state.sim);

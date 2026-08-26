@@ -2,6 +2,8 @@
 #include "config.hpp"
 #include "phonon.h"
 #include "steam_audio.hpp"
+#include <cstdio>
+#include <godot_cpp/classes/audio_server.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/os.hpp>
 
@@ -9,9 +11,21 @@ using namespace godot;
 
 IPLAudioSettings create_audio_cfg() {
 	int sample_rate = ProjectSettings::get_singleton()->get_setting("audio/driver/mix_rate");
+	if (sample_rate <= 0) {
+		sample_rate = int(AudioServer::get_singleton()->get_mix_rate());
+	}
+	if (sample_rate <= 0) {
+		sample_rate = 48000;
+	}
 	int output_latency = ProjectSettings::get_singleton()->get_setting("audio/driver/output_latency");
+	if (output_latency <= 0) {
+		output_latency = 15;
+	}
 	int frame_size = closest_power_of_2(output_latency * sample_rate / 1000);
-	return IPLAudioSettings{ sample_rate, int(frame_size) };
+	if (frame_size < 256) {
+		frame_size = 256;
+	}
+	return IPLAudioSettings{ sample_rate, frame_size };
 }
 
 IPLHRTF create_hrtf(IPLContext ctx, IPLAudioSettings audio_cfg) {
@@ -20,9 +34,8 @@ IPLHRTF create_hrtf(IPLContext ctx, IPLAudioSettings audio_cfg) {
 	hrtf_cfg.volume = SteamAudioConfig::hrtf_volume;
 	hrtf_cfg.normType = IPL_HRTFNORMTYPE_NONE;
 
-	IPLHRTF hrtf;
-	IPLerror err = iplHRTFCreate(ctx, &audio_cfg, &hrtf_cfg, &hrtf);
-	handleErr(err);
+	IPLHRTF hrtf = nullptr;
+	handleErr(iplHRTFCreate(ctx, &audio_cfg, &hrtf_cfg, &hrtf), "iplHRTFCreate");
 	return hrtf;
 }
 
@@ -34,11 +47,11 @@ IPLAmbisonicsDecodeEffect create_ambisonics_decode_effect(IPLContext ctx, IPLAud
 	layout.type = IPL_SPEAKERLAYOUTTYPE_STEREO;
 	ambi_dec_cfg.speakerLayout = layout;
 
-	IPLAmbisonicsDecodeEffect ambi_dec_effect;
-	IPLerror err = iplAmbisonicsDecodeEffectCreate(ctx, &audio_cfg,
-			&ambi_dec_cfg,
-			&ambi_dec_effect);
-	handleErr(err);
+	IPLAmbisonicsDecodeEffect ambi_dec_effect = nullptr;
+	handleErr(iplAmbisonicsDecodeEffectCreate(ctx, &audio_cfg,
+					&ambi_dec_cfg,
+					&ambi_dec_effect),
+			"iplAmbisonicsDecodeEffectCreate");
 	return ambi_dec_effect;
 }
 
@@ -46,9 +59,9 @@ IPLAmbisonicsEncodeEffect create_ambisonics_encode_effect(IPLContext ctx, IPLAud
 	IPLAmbisonicsEncodeEffectSettings ambi_enc_cfg;
 	ambi_enc_cfg.maxOrder = SteamAudioConfig::max_ambisonics_order;
 
-	IPLAmbisonicsEncodeEffect ambi_enc_effect;
-	IPLerror err = iplAmbisonicsEncodeEffectCreate(ctx, &audio_cfg, &ambi_enc_cfg, &ambi_enc_effect);
-	handleErr(err);
+	IPLAmbisonicsEncodeEffect ambi_enc_effect = nullptr;
+	handleErr(iplAmbisonicsEncodeEffectCreate(ctx, &audio_cfg, &ambi_enc_cfg, &ambi_enc_effect),
+			"iplAmbisonicsEncodeEffectCreate");
 	return ambi_enc_effect;
 }
 
@@ -68,9 +81,8 @@ IPLSimulator create_simulator(IPLContext ctx, IPLAudioSettings audio_cfg, IPLSce
 	sim_cfg.maxNumSources = SteamAudioConfig::max_num_refl_srcs;
 	sim_cfg.numThreads = SteamAudioConfig::num_refl_threads;
 
-	IPLSimulator sim;
-	IPLerror err = iplSimulatorCreate(ctx, &sim_cfg, &sim);
-	handleErr(err);
+	IPLSimulator sim = nullptr;
+	handleErr(iplSimulatorCreate(ctx, &sim_cfg, &sim), "iplSimulatorCreate");
 	return sim;
 }
 
@@ -96,8 +108,7 @@ IPLSceneSettings create_scene_cfg(IPLContext ctx) {
 	if (scene_cfg.type == IPL_SCENETYPE_EMBREE) {
 		IPLEmbreeDeviceSettings embree_cfg{};
 		if (embree_dev == nullptr) {
-			IPLerror err = iplEmbreeDeviceCreate(ctx, &embree_cfg, &embree_dev);
-			handleErr(err);
+			handleErr(iplEmbreeDeviceCreate(ctx, &embree_cfg, &embree_dev), "iplEmbreeDeviceCreate");
 		}
 		scene_cfg.embreeDevice = embree_dev;
 	}
@@ -108,8 +119,10 @@ IPLContext create_ctx() {
 	IPLContextSettings ctx_cfg{};
 	ctx_cfg.version = STEAMAUDIO_VERSION;
 	ctx_cfg.logCallback = log_callback;
-	IPLContext ctx;
-	IPLerror err = iplContextCreate(&ctx_cfg, &ctx);
-	handleErr(err);
+	IPLContext ctx = nullptr;
+	char ver[128];
+	snprintf(ver, sizeof(ver), "iplContextCreate (API %d.%d.%d)",
+			STEAMAUDIO_VERSION_MAJOR, STEAMAUDIO_VERSION_MINOR, STEAMAUDIO_VERSION_PATCH);
+	handleErr(iplContextCreate(&ctx_cfg, &ctx), ver);
 	return ctx;
 }

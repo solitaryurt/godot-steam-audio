@@ -2,6 +2,7 @@
 #define STEAM_AUDIO_H
 
 #include "godot_cpp/variant/transform3d.hpp"
+#include <cstdio>
 #include <phonon.h>
 #include <godot_cpp/classes/audio_stream_player3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
@@ -131,20 +132,27 @@ inline IPLMatrix4x4 ipl_matrix_from(const Transform3D &trf) {
 	} };
 }
 
-inline void handleErr(IPLerror err) {
-	switch (err) {
-		case IPL_STATUS_SUCCESS:
-			return;
-		case IPL_STATUS_FAILURE:
-			SteamAudio::log(SteamAudio::log_error, "Unspecified error in init");
-			return;
-		case IPL_STATUS_OUTOFMEMORY:
-			SteamAudio::log(SteamAudio::log_error, "Out of memory in init");
-			return;
-		case IPL_STATUS_INITIALIZATION:
-			SteamAudio::log(SteamAudio::log_error, "Failed to handle external dependency in init");
-			return;
+inline bool handleErr(IPLerror err, const char *what = "init") {
+	if (err == IPL_STATUS_SUCCESS) {
+		return true;
 	}
+
+	const char *reason = "Unspecified error";
+	switch (err) {
+		case IPL_STATUS_OUTOFMEMORY:
+			reason = "Out of memory";
+			break;
+		case IPL_STATUS_INITIALIZATION:
+			reason = "Failed to handle external dependency";
+			break;
+		default:
+			break;
+	}
+
+	char buf[256];
+	snprintf(buf, sizeof(buf), "%s: %s (IPL error %d)", what, reason, int(err));
+	SteamAudio::log(SteamAudio::log_error, buf);
+	return false;
 }
 
 inline void log_callback(IPLLogLevel level, const char *message) {
