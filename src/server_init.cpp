@@ -15,9 +15,10 @@ IPLAudioSettings create_audio_cfg() {
 }
 
 IPLHRTF create_hrtf(IPLContext ctx, IPLAudioSettings audio_cfg) {
-	IPLHRTFSettings hrtf_cfg;
+	IPLHRTFSettings hrtf_cfg{};
 	hrtf_cfg.type = IPL_HRTFTYPE_DEFAULT;
 	hrtf_cfg.volume = SteamAudioConfig::hrtf_volume;
+	hrtf_cfg.normType = IPL_HRTFNORMTYPE_NONE;
 
 	IPLHRTF hrtf;
 	IPLerror err = iplHRTFCreate(ctx, &audio_cfg, &hrtf_cfg, &hrtf);

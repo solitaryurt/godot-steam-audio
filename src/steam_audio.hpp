@@ -115,6 +115,22 @@ inline IPLCoordinateSpace3 ipl_coords_from(const Transform3D &trf) {
 	return coords;
 }
 
+// Godot and Steam Audio share a right-handed Y-up, -Z-ahead space, so mesh
+// transforms are Godot's affine matrix as-is (basis columns, not the
+// listener "ahead" vector). Phonon stores this as row-major for p' = M p.
+inline IPLMatrix4x4 ipl_matrix_from(const Transform3D &trf) {
+	Vector3 x = trf.get_basis().get_column(0);
+	Vector3 y = trf.get_basis().get_column(1);
+	Vector3 z = trf.get_basis().get_column(2);
+	Vector3 o = trf.origin;
+	return IPLMatrix4x4{ {
+			{ x.x, y.x, z.x, o.x },
+			{ x.y, y.y, z.y, o.y },
+			{ x.z, y.z, z.z, o.z },
+			{ 0.f, 0.f, 0.f, 1.f },
+	} };
+}
+
 inline void handleErr(IPLerror err) {
 	switch (err) {
 		case IPL_STATUS_SUCCESS:

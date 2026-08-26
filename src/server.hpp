@@ -8,6 +8,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
+#include <vector>
 
 using namespace godot;
 
@@ -27,10 +29,11 @@ private:
 	std::mutex refl_mux;
 	std::mutex tick_mux;
 	std::condition_variable cv;
+	std::condition_variable refl_idle_cv;
 
-	// meshes to add to the global state scene after it's initialized.
 	std::vector<IPLStaticMesh> static_meshes_to_add;
-	std::vector<IPLStaticMesh> dynamic_meshes_to_add;
+	std::vector<IPLInstancedMesh> dynamic_meshes_to_add;
+	std::unordered_map<IPLInstancedMesh, IPLMatrix4x4> pending_transforms;
 
 	// TODO: allow for multiple
 	SteamAudioListener *listener = nullptr;
@@ -38,6 +41,8 @@ private:
 	void init_scene(IPLSceneSettings *scene_cfg);
 	void start_refl_sim();
 	void run_refl_sim();
+	void wait_for_refl_idle();
+	void apply_pending_scene_ops();
 	Ref<Thread> refl_thread;
 
 protected:
@@ -53,10 +58,13 @@ public:
 	void add_listener(SteamAudioListener *listener);
 	void add_local_state(LocalSteamAudioState *ls);
 	void remove_local_state(LocalSteamAudioState *ls);
+	void add_source(IPLSource src);
+	void remove_source(IPLSource src);
 	void add_static_mesh(IPLStaticMesh mesh);
 	void remove_static_mesh(IPLStaticMesh mesh);
 	void add_dynamic_mesh(IPLInstancedMesh mesh);
 	void remove_dynamic_mesh(IPLInstancedMesh mesh);
+	void update_dynamic_mesh_transform(IPLInstancedMesh mesh, IPLMatrix4x4 transform);
 
 	void tick();
 };

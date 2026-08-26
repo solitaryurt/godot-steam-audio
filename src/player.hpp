@@ -44,11 +44,14 @@ private:
 	LocalSteamAudioState local_state;
 	std::atomic<bool> is_local_state_init;
 	std::atomic<bool> can_load_local_state;
+	std::atomic<bool> in_simulator{false};
 	std::atomic<bool> cfg_dirty{false};
 	bool has_warned_panning = false;
 	bool has_warned_attenuation = false;
 
 	void init_local_state();
+	void register_with_simulator();
+	void unregister_from_simulator();
 
 protected:
 	static void _bind_methods();

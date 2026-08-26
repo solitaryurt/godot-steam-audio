@@ -39,6 +39,11 @@ void SteamAudioDynamicGeometry::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE:
 			ready_internal();
 			break;
+		case NOTIFICATION_EXIT_TREE:
+			if (!Engine::get_singleton()->is_editor_hint()) {
+				unregister_geometry();
+			}
+			break;
 		case NOTIFICATION_PHYSICS_PROCESS:
 			process_internal(get_physics_process_delta_time());
 			break;
@@ -65,22 +70,10 @@ void SteamAudioDynamicGeometry::process_internal(double delta) {
 		}
 	}
 
-	auto orig = get_global_transform().origin;
-	auto right = get_global_transform().get_basis().get_column(0);
-	auto up = get_global_transform().get_basis().get_column(1);
-	auto fwd = -get_global_transform().get_basis().get_column(2);
-
-	IPLMatrix4x4 new_trf{
-		{
-				{ right.x, right.y, right.z, orig.x },
-				{ up.x, up.y, up.z, orig.y },
-				{ fwd.x, fwd.y, fwd.z, orig.z },
-				{ 0., 0., 0., 1. },
-		}
-	};
-
-	// TODO: check if it improves perf to skip this if the object does not move.
-	iplInstancedMeshUpdateTransform(mesh, SteamAudioServer::get_singleton()->get_global_state()->scene, new_trf);
+	if (mesh != nullptr) {
+		SteamAudioServer::get_singleton()->update_dynamic_mesh_transform(
+				mesh, ipl_matrix_from(get_global_transform()));
+	}
 }
 
 Ref<SteamAudioMaterial> SteamAudioDynamicGeometry::get_material() { return mat; }
@@ -95,6 +88,9 @@ PackedStringArray SteamAudioDynamicGeometry::_get_configuration_warnings() const
 }
 
 void SteamAudioDynamicGeometry::create_geometry() {
+	if (sub_scene != nullptr) {
+		return;
+	}
 	auto gs = SteamAudioServer::get_singleton()->get_global_state();
 	if (gs == nullptr) {
 		return; // not inititalized yet, ret
@@ -121,10 +117,19 @@ void SteamAudioDynamicGeometry::create_geometry() {
 }
 
 void SteamAudioDynamicGeometry::destroy_geometry() {
+	if (mesh != nullptr) {
+		iplInstancedMeshRelease(&mesh);
+		mesh = nullptr;
+	}
 	for (auto &m : meshes) {
 		iplStaticMeshRelease(&m);
 	}
 	meshes.clear();
+	if (sub_scene != nullptr) {
+		iplSceneRelease(&sub_scene);
+		sub_scene = nullptr;
+	}
+	is_init.store(false);
 }
 
 void SteamAudioDynamicGeometry::register_geometry() {
@@ -133,22 +138,25 @@ void SteamAudioDynamicGeometry::register_geometry() {
 		return; // not inititalized yet, ret
 	}
 
-	Vector3 scale = get_transform().get_basis().get_scale();
-	IPLMatrix4x4 trf = IPLMatrix4x4{ {
-			{ scale.x, 0., 0., 0. },
-			{ 0., scale.y, 0., 0. },
-			{ 0., 0., scale.z, 0. },
-			{ 0., 0., 0., 1. },
-	} };
-
-	IPLInstancedMeshSettings mesh_cfg{ sub_scene, trf };
-	IPLerror err = iplInstancedMeshCreate(gs->scene, &mesh_cfg, &mesh);
-	handleErr(err);
+	if (mesh == nullptr) {
+		if (sub_scene == nullptr) {
+			return;
+		}
+		IPLInstancedMeshSettings mesh_cfg{ sub_scene, ipl_matrix_from(get_global_transform()) };
+		IPLerror err = iplInstancedMeshCreate(gs->scene, &mesh_cfg, &mesh);
+		handleErr(err);
+	}
 
 	is_init.store(true);
 	SteamAudioServer::get_singleton()->add_dynamic_mesh(mesh);
 }
 
 void SteamAudioDynamicGeometry::unregister_geometry() {
-	SteamAudioServer::get_singleton()->remove_dynamic_mesh(mesh);
+	if (mesh == nullptr) {
+		return;
+	}
+	auto srv = SteamAudioServer::get_singleton();
+	if (srv != nullptr) {
+		srv->remove_dynamic_mesh(mesh);
+	}
 }

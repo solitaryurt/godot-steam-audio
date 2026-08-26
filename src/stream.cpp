@@ -32,134 +32,166 @@ Ref<AudioStream> SteamAudioStream::get_stream() { return this->stream; }
 SteamAudioStreamPlayback::SteamAudioStreamPlayback() {}
 SteamAudioStreamPlayback::~SteamAudioStreamPlayback() {}
 
+static int32_t write_silence(AudioFrame *buffer, int32_t frames) {
+	for (int i = 0; i < frames; i++) {
+		buffer[i].left = 0.0f;
+		buffer[i].right = 0.0f;
+	}
+	return frames;
+}
+
+static void set_buf_samples(LocalSteamAudioState *ls, int n) {
+	ls->bufs.in.numSamples = n;
+	ls->bufs.direct.numSamples = n;
+	ls->bufs.mono.numSamples = n;
+	ls->bufs.ambi.numSamples = n;
+	ls->bufs.out.numSamples = n;
+	ls->bufs.refl_ambi.numSamples = n;
+	ls->bufs.refl_out.numSamples = n;
+}
+
 int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int32_t frames) {
-	if (parent == nullptr) {
-		return frames;
-	}
-
-	if (stream_playback.is_null()) {
-		return frames;
-	}
-
-	if (Engine::get_singleton()->is_editor_hint()) {
-		return frames;
+	if (parent == nullptr || stream_playback.is_null() || Engine::get_singleton()->is_editor_hint()) {
+		return write_silence(buffer, frames);
 	}
 
 	auto gs = SteamAudioServer::get_singleton()->get_global_state(false);
 	if (gs == nullptr) {
-		return frames;
+		return write_silence(buffer, frames);
 	}
 
 	SteamAudio::log(SteamAudio::log_debug, "mixing");
 
 	LocalSteamAudioState *ls = parent->get_local_state();
-	if (ls == nullptr) { // probably being destroyed
-		return frames;
+	if (ls == nullptr) {
+		return write_silence(buffer, frames);
 	}
 	std::unique_lock lock(ls->mux);
 
-	// Some extra checks because at this point parent may have been deleted
 	if (parent == nullptr) {
-		return frames;
+		return write_silence(buffer, frames);
 	}
 	ls = parent->get_local_state();
 	if (ls == nullptr || !ls->src.player) {
-		return frames;
+		return write_silence(buffer, frames);
 	}
 
 	PackedVector2Array mixed_frames = stream_playback->mix_audio(rate_scale, frames);
-	frames = int(mixed_frames.size());
-
-	auto gs_local = SteamAudioServer::get_singleton()->get_global_state(false);
-	if (gs_local != nullptr && frames > gs_local->audio_cfg.frameSize) {
-		frames = gs_local->audio_cfg.frameSize;
+	int32_t total = int(mixed_frames.size());
+	int32_t frame_size = gs->audio_cfg.frameSize;
+	if (frame_size <= 0) {
+		return write_silence(buffer, frames);
 	}
 
-	for (int i = 0; i < frames; i++) {
-		ls->bufs.in.data[0][i] = mixed_frames[i].x;
-		ls->bufs.in.data[1][i] = mixed_frames[i].y;
-	}
+	int32_t written = 0;
+	while (written < total) {
+		int32_t chunk = total - written;
+		if (chunk > frame_size) {
+			chunk = frame_size;
+		}
+		set_buf_samples(ls, chunk);
 
-	if (ls->cfg.is_air_absorp_on) {
-		ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
-				ls->direct_outputs.flags |
-				IPL_DIRECTEFFECTFLAGS_APPLYAIRABSORPTION);
-	}
-
-	if (ls->cfg.is_dist_attn_on) {
-		ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
-				ls->direct_outputs.flags |
-				IPL_DIRECTEFFECTFLAGS_APPLYDISTANCEATTENUATION);
-	}
-	if (ls->cfg.is_occlusion_on) {
-		ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
-				ls->direct_outputs.flags |
-				IPL_DIRECTEFFECTFLAGS_APPLYOCCLUSION |
-				IPL_DIRECTEFFECTFLAGS_APPLYTRANSMISSION);
-		ls->direct_outputs.transmissionType = ls->cfg.transmission_type;
-	}
-	if (ls->cfg.is_directivity_on) {
-		ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
-				ls->direct_outputs.flags |
-				IPL_DIRECTEFFECTFLAGS_APPLYDIRECTIVITY);
-	}
-
-	if (ls->direct_outputs.flags != 0) {
-		iplDirectEffectApply(
-				ls->fx.direct, &ls->direct_outputs,
-				&ls->bufs.in, &ls->bufs.direct);
-	} else {
-		for (int i = 0; i < ls->bufs.direct.numChannels; i++) {
-			for (int j = 0; j < ls->bufs.direct.numSamples; j++) {
-				ls->bufs.direct.data[i][j] = 0.0f;
-			}
+		for (int i = 0; i < chunk; i++) {
+			ls->bufs.in.data[0][i] = mixed_frames[written + i].x;
+			ls->bufs.in.data[1][i] = mixed_frames[written + i].y;
 		}
 
-		iplAudioBufferMix(gs->ctx, &ls->bufs.in, &ls->bufs.direct);
+		if (ls->cfg.is_air_absorp_on) {
+			ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
+					ls->direct_outputs.flags |
+					IPL_DIRECTEFFECTFLAGS_APPLYAIRABSORPTION);
+		}
+
+		if (ls->cfg.is_dist_attn_on) {
+			ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
+					ls->direct_outputs.flags |
+					IPL_DIRECTEFFECTFLAGS_APPLYDISTANCEATTENUATION);
+		}
+		if (ls->cfg.is_occlusion_on) {
+			ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
+					ls->direct_outputs.flags |
+					IPL_DIRECTEFFECTFLAGS_APPLYOCCLUSION |
+					IPL_DIRECTEFFECTFLAGS_APPLYTRANSMISSION);
+			ls->direct_outputs.transmissionType = ls->cfg.transmission_type;
+		}
+		if (ls->cfg.is_directivity_on) {
+			ls->direct_outputs.flags = static_cast<IPLDirectEffectFlags>(
+					ls->direct_outputs.flags |
+					IPL_DIRECTEFFECTFLAGS_APPLYDIRECTIVITY);
+		}
+
+		if (ls->direct_outputs.flags != 0) {
+			iplDirectEffectApply(
+					ls->fx.direct, &ls->direct_outputs,
+					&ls->bufs.in, &ls->bufs.direct);
+		} else {
+			for (int i = 0; i < ls->bufs.direct.numChannels; i++) {
+				for (int j = 0; j < chunk; j++) {
+					ls->bufs.direct.data[i][j] = 0.0f;
+				}
+			}
+
+			iplAudioBufferMix(gs->ctx, &ls->bufs.in, &ls->bufs.direct);
+		}
+
+		IPLAmbisonicsDecodeEffectParams dec_params{};
+		dec_params.orientation = gs->listener_coords;
+		dec_params.order = ls->cfg.ambisonics_order;
+		dec_params.hrtf = gs->hrtf;
+		dec_params.binaural = IPL_TRUE;
+
+		if (ls->cfg.is_ambisonics_on) {
+			iplAudioBufferDownmix(gs->ctx, &ls->bufs.direct, &ls->bufs.mono);
+
+			IPLAmbisonicsEncodeEffectParams enc_params{};
+			enc_params.direction = ipl_vec3_from(ls->dir_to_listener);
+			enc_params.order = ls->cfg.ambisonics_order;
+			iplAmbisonicsEncodeEffectApply(
+					ls->fx.enc, &enc_params,
+					&ls->bufs.mono, &ls->bufs.ambi);
+
+			iplAmbisonicsDecodeEffectApply(
+					ls->fx.dec, &dec_params,
+					&ls->bufs.ambi, &ls->bufs.out);
+			SteamAudio::log(SteamAudio::log_debug, "mixing: finished ambisonics");
+		} else {
+			for (int i = 0; i < ls->bufs.out.numChannels; i++) {
+				for (int j = 0; j < chunk; j++) {
+					ls->bufs.out.data[i][j] = 0.0f;
+				}
+			}
+			iplAudioBufferMix(gs->ctx, &ls->bufs.direct, &ls->bufs.out);
+		}
+
+		gs->refl_ir_lock.lock();
+		if (ls->refl_outputs.ir != nullptr && ls->cfg.is_reflection_on) {
+			iplAudioBufferDownmix(gs->ctx, &ls->bufs.in, &ls->bufs.mono);
+			ls->refl_outputs.numChannels = ambisonic_channels_from(ls->cfg.ambisonics_order);
+			ls->refl_outputs.type = IPL_REFLECTIONEFFECTTYPE_CONVOLUTION;
+			ls->refl_outputs.irSize = int(SteamAudioConfig::max_refl_duration * float(gs->audio_cfg.samplingRate));
+			iplReflectionEffectApply(ls->fx.refl, &ls->refl_outputs, &ls->bufs.mono, &ls->bufs.refl_ambi, nullptr);
+
+			iplAmbisonicsDecodeEffectApply(
+					ls->fx.refl_dec, &dec_params,
+					&ls->bufs.refl_ambi, &ls->bufs.refl_out);
+
+			SteamAudio::log(SteamAudio::log_debug, "mixing: mixing reflection and direct buffers");
+			iplAudioBufferMix(gs->ctx, &ls->bufs.refl_out, &ls->bufs.out);
+		}
+		gs->refl_ir_lock.unlock();
+
+		for (int i = 0; i < chunk; i++) {
+			buffer[written + i].left = ls->bufs.out.data[0][i];
+			buffer[written + i].right = ls->bufs.out.data[1][i];
+		}
+		written += chunk;
 	}
 
-	IPLAmbisonicsDecodeEffectParams dec_params{};
-	dec_params.orientation = gs->listener_coords;
-	dec_params.order = ls->cfg.ambisonics_order;
-	dec_params.hrtf = gs->hrtf;
-	dec_params.binaural = IPL_TRUE;
+	set_buf_samples(ls, frame_size);
 
-	if (ls->cfg.is_ambisonics_on) {
-		IPLAmbisonicsEncodeEffectParams enc_params{};
-		enc_params.direction = ipl_vec3_from(ls->dir_to_listener);
-		enc_params.order = ls->cfg.ambisonics_order;
-		iplAmbisonicsEncodeEffectApply(
-				ls->fx.enc, &enc_params,
-				&ls->bufs.direct, &ls->bufs.ambi);
-
-		iplAmbisonicsDecodeEffectApply(
-				ls->fx.dec, &dec_params,
-				&ls->bufs.ambi, &ls->bufs.out);
-		SteamAudio::log(SteamAudio::log_debug, "mixing: finished ambisonics");
-	} else {
-		iplAudioBufferMix(gs->ctx, &ls->bufs.direct, &ls->bufs.out);
-	}
-
-	gs->refl_ir_lock.lock();
-	if (ls->refl_outputs.ir != nullptr && ls->cfg.is_reflection_on) {
-		iplAudioBufferDownmix(gs->ctx, &ls->bufs.in, &ls->bufs.mono);
-		ls->refl_outputs.numChannels = ambisonic_channels_from(ls->cfg.ambisonics_order);
-		ls->refl_outputs.type = IPL_REFLECTIONEFFECTTYPE_CONVOLUTION;
-		ls->refl_outputs.irSize = int(SteamAudioConfig::max_refl_duration * float(gs->audio_cfg.samplingRate));
-		iplReflectionEffectApply(ls->fx.refl, &ls->refl_outputs, &ls->bufs.mono, &ls->bufs.refl_ambi, nullptr);
-
-		iplAmbisonicsDecodeEffectApply(
-				ls->fx.refl_dec, &dec_params,
-				&ls->bufs.refl_ambi, &ls->bufs.refl_out);
-
-		SteamAudio::log(SteamAudio::log_debug, "mixing: mixing reflection and direct buffers");
-		iplAudioBufferMix(gs->ctx, &ls->bufs.refl_out, &ls->bufs.out);
-	}
-	gs->refl_ir_lock.unlock();
-
-	for (int i = 0; i < frames; i++) {
-		buffer[i].left = ls->bufs.out.data[0][i];
-		buffer[i].right = ls->bufs.out.data[1][i];
+	for (int i = written; i < frames; i++) {
+		buffer[i].left = 0.0f;
+		buffer[i].right = 0.0f;
 	}
 
 	SteamAudio::log(SteamAudio::log_debug, "mixing: done");

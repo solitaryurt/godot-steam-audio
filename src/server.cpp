@@ -11,6 +11,32 @@
 #include <algorithm>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+void SteamAudioServer::wait_for_refl_idle() {
+	// Caller must hold tick_mux so tick() cannot start a new reflection run.
+	if (!is_refl_thread_processing.load()) {
+		return;
+	}
+	std::unique_lock<std::mutex> lock(refl_mux);
+	refl_idle_cv.wait(lock, [&] { return !is_refl_thread_processing.load(); });
+}
+
+void SteamAudioServer::apply_pending_scene_ops() {
+	for (auto m : static_meshes_to_add) {
+		iplStaticMeshAdd(m, global_state.scene);
+	}
+	static_meshes_to_add.clear();
+
+	for (auto m : dynamic_meshes_to_add) {
+		iplInstancedMeshAdd(m, global_state.scene);
+	}
+	dynamic_meshes_to_add.clear();
+
+	for (auto &kv : pending_transforms) {
+		iplInstancedMeshUpdateTransform(kv.first, global_state.scene, kv.second);
+	}
+	pending_transforms.clear();
+}
+
 void SteamAudioServer::tick() {
 	if (Engine::get_singleton()->is_editor_hint()) {
 		return;
@@ -26,6 +52,7 @@ void SteamAudioServer::tick() {
 	SteamAudio::log(SteamAudio::log_debug, "tick");
 
 	if (!is_refl_thread_processing.load()) {
+		apply_pending_scene_ops();
 		iplSceneCommit(self->global_state.scene);
 	}
 
@@ -43,17 +70,23 @@ void SteamAudioServer::tick() {
 		}
 
 		Vector3 src_pos = ls->src.player->get_global_position();
-		ls->dir_to_listener = src_pos - self->listener->get_global_position();
+		Vector3 dir = src_pos - self->listener->get_global_position();
+		SteamAudioSourceConfig cfg_copy;
+		{
+			std::unique_lock lock(ls->mux);
+			ls->dir_to_listener = dir;
+			cfg_copy = ls->cfg;
+		}
 
 		IPLDistanceAttenuationModel attn_model{};
 		attn_model.type = IPL_DISTANCEATTENUATIONTYPE_INVERSEDISTANCE;
-		attn_model.minDistance = ls->cfg.min_attn_dist;
+		attn_model.minDistance = cfg_copy.min_attn_dist;
 
 		IPLAirAbsorptionModel absorp_model{};
-		absorp_model.type = ls->cfg.air_absorption_model_type;
-		absorp_model.coefficients[0] = ls->cfg.air_absorption_low;
-		absorp_model.coefficients[1] = ls->cfg.air_absorption_mid;
-		absorp_model.coefficients[2] = ls->cfg.air_absorption_high;
+		absorp_model.type = cfg_copy.air_absorption_model_type;
+		absorp_model.coefficients[0] = cfg_copy.air_absorption_low;
+		absorp_model.coefficients[1] = cfg_copy.air_absorption_mid;
+		absorp_model.coefficients[2] = cfg_copy.air_absorption_high;
 
 		IPLCoordinateSpace3 src_coords = ipl_coords_from(ls->src.player->get_global_transform());
 
@@ -63,30 +96,30 @@ void SteamAudioServer::tick() {
 		inputs.airAbsorptionModel = absorp_model;
 		inputs.source = src_coords;
 		inputs.occlusionType = IPL_OCCLUSIONTYPE_VOLUMETRIC;
-		inputs.occlusionRadius = ls->cfg.occ_radius;
-		inputs.numOcclusionSamples = ls->cfg.occ_samples;
-		inputs.numTransmissionRays = ls->cfg.transm_rays;
+		inputs.occlusionRadius = cfg_copy.occ_radius;
+		inputs.numOcclusionSamples = cfg_copy.occ_samples;
+		inputs.numTransmissionRays = cfg_copy.transm_rays;
 
-		if (ls->cfg.is_air_absorp_on) {
+		if (cfg_copy.is_air_absorp_on) {
 			inputs.directFlags = static_cast<IPLDirectSimulationFlags>(
 					inputs.directFlags |
 					IPL_DIRECTSIMULATIONFLAGS_AIRABSORPTION);
 		}
 
-		if (ls->cfg.is_dist_attn_on) {
+		if (cfg_copy.is_dist_attn_on) {
 			inputs.directFlags = static_cast<IPLDirectSimulationFlags>(
 					inputs.directFlags |
 					IPL_DIRECTSIMULATIONFLAGS_DISTANCEATTENUATION);
 		}
-		if (ls->cfg.is_occlusion_on) {
+		if (cfg_copy.is_occlusion_on) {
 			inputs.directFlags = static_cast<IPLDirectSimulationFlags>(
 					inputs.directFlags |
 					IPL_DIRECTSIMULATIONFLAGS_OCCLUSION |
 					IPL_DIRECTSIMULATIONFLAGS_TRANSMISSION);
 		}
-		if (ls->cfg.is_directivity_on) {
-			inputs.directivity.dipoleWeight = ls->cfg.dipole_weight;
-			inputs.directivity.dipolePower = ls->cfg.dipole_power;
+		if (cfg_copy.is_directivity_on) {
+			inputs.directivity.dipoleWeight = cfg_copy.dipole_weight;
+			inputs.directivity.dipolePower = cfg_copy.dipole_power;
 			inputs.directFlags = static_cast<IPLDirectSimulationFlags>(
 					inputs.directFlags |
 					IPL_DIRECTSIMULATIONFLAGS_DIRECTIVITY);
@@ -115,7 +148,10 @@ void SteamAudioServer::tick() {
 
 		IPLSimulationOutputs outputs{};
 		iplSourceGetOutputs(ls->src.src, IPL_SIMULATIONFLAGS_DIRECT, &outputs);
-		ls->direct_outputs = outputs.direct;
+		{
+			std::unique_lock lock(ls->mux);
+			ls->direct_outputs = outputs.direct;
+		}
 	}
 
 	if (is_refl_thread_processing.load()) {
@@ -123,7 +159,6 @@ void SteamAudioServer::tick() {
 		return;
 	}
 
-	global_state.refl_ir_lock.lock();
 	for (auto ls : local_states) {
 		if (ls->src.player == nullptr || !ls->src.player->is_inside_tree()) {
 			continue;
@@ -135,15 +170,23 @@ void SteamAudioServer::tick() {
 			continue;
 		}
 
-		if (ls->src.player->get_global_position().distance_to(listener->get_global_position()) > ls->cfg.max_refl_dist) {
+		float max_refl_dist;
+		{
+			std::unique_lock lock(ls->mux);
+			max_refl_dist = ls->cfg.max_refl_dist;
+		}
+		if (ls->src.player->get_global_position().distance_to(listener->get_global_position()) > max_refl_dist) {
 			continue;
 		}
 
-		IPLSimulationOutputs outputs;
+		IPLSimulationOutputs outputs{};
 		iplSourceGetOutputs(ls->src.src, IPL_SIMULATIONFLAGS_REFLECTIONS, &outputs);
-		ls->refl_outputs = outputs.reflections;
+		{
+			std::unique_lock lock(ls->mux);
+			std::lock_guard ir_lock(global_state.refl_ir_lock);
+			ls->refl_outputs = outputs.reflections;
+		}
 	}
-	global_state.refl_ir_lock.unlock();
 
 	for (auto ls : self->local_states) {
 		if (ls->src.player == nullptr || !ls->src.player->is_inside_tree()) {
@@ -155,7 +198,12 @@ void SteamAudioServer::tick() {
 		if (listener == nullptr || !listener->is_inside_tree()) {
 			continue;
 		}
-		if (ls->src.player->get_global_position().distance_to(listener->get_global_position()) > ls->cfg.max_refl_dist) {
+		float max_refl_dist;
+		{
+			std::unique_lock lock(ls->mux);
+			max_refl_dist = ls->cfg.max_refl_dist;
+		}
+		if (ls->src.player->get_global_position().distance_to(listener->get_global_position()) > max_refl_dist) {
 			continue;
 		}
 
@@ -218,6 +266,7 @@ GlobalSteamAudioState *SteamAudioServer::get_global_state(bool should_init) {
 	for (auto m : static_meshes_to_add) {
 		iplStaticMeshAdd(m, global_state.scene);
 	}
+	static_meshes_to_add.clear();
 
 	global_state.sim = create_simulator(
 			global_state.ctx, global_state.audio_cfg, scene_cfg);
@@ -249,17 +298,27 @@ void SteamAudioServer::run_refl_sim() {
 			std::unique_lock<std::mutex> lock(this->refl_mux);
 			cv.wait(lock, [&] { return is_refl_thread_processing.load() || !is_running.load(); });
 		}
+		if (!is_running.load()) {
+			break;
+		}
 		// if someone removed a local state, then the reflection sim might crash, so
 		// we need it to wait for another tick.
-		// XXX: what happens if a local state is removed in the middle of a sim run...?
 		if (local_states_have_changed.load()) {
 			local_states_have_changed.store(false);
-			is_refl_thread_processing.store(false);
+			{
+				std::unique_lock<std::mutex> lock(this->refl_mux);
+				is_refl_thread_processing.store(false);
+				refl_idle_cv.notify_all();
+			}
 			continue;
 		}
 		SteamAudio::log(SteamAudio::log_debug, "running reflection sim");
 		iplSimulatorRunReflections(global_state.sim);
-		is_refl_thread_processing.store(false);
+		{
+			std::unique_lock<std::mutex> lock(this->refl_mux);
+			is_refl_thread_processing.store(false);
+			refl_idle_cv.notify_all();
+		}
 	}
 }
 
@@ -283,40 +342,75 @@ void SteamAudioServer::remove_local_state(LocalSteamAudioState *ls) {
 	local_states_have_changed.store(true);
 }
 
+void SteamAudioServer::add_source(IPLSource src) {
+	std::lock_guard<std::mutex> lock(tick_mux);
+	wait_for_refl_idle();
+	iplSourceAdd(src, global_state.sim);
+	iplSimulatorCommit(global_state.sim);
+}
+
+void SteamAudioServer::remove_source(IPLSource src) {
+	std::lock_guard<std::mutex> lock(tick_mux);
+	wait_for_refl_idle();
+	iplSourceRemove(src, global_state.sim);
+	iplSimulatorCommit(global_state.sim);
+	local_states_have_changed.store(true);
+}
+
 void SteamAudioServer::add_static_mesh(IPLStaticMesh mesh) {
-	if (is_global_state_init.load()) {
-		iplStaticMeshAdd(mesh, global_state.scene);
-	} else {
-		static_meshes_to_add.push_back(mesh);
-	}
+	std::lock_guard<std::mutex> lock(tick_mux);
+	static_meshes_to_add.push_back(mesh);
 }
 
 void SteamAudioServer::remove_static_mesh(IPLStaticMesh mesh) {
-	if (is_global_state_init.load()) {
-		iplStaticMeshRemove(mesh, global_state.scene);
-	} else {
-		// Probably won't happen?
-		auto it = std::find(static_meshes_to_add.begin(), static_meshes_to_add.end(), mesh);
-		if (it != static_meshes_to_add.end()) {
-			static_meshes_to_add.erase(it);
-		}
+	std::lock_guard<std::mutex> lock(tick_mux);
+	auto add = std::find(static_meshes_to_add.begin(), static_meshes_to_add.end(), mesh);
+	if (add != static_meshes_to_add.end()) {
+		static_meshes_to_add.erase(add);
+		return;
 	}
+	if (!is_global_state_init.load()) {
+		return;
+	}
+	wait_for_refl_idle();
+	iplStaticMeshRemove(mesh, global_state.scene);
+	iplSceneCommit(global_state.scene);
 }
 
 void SteamAudioServer::add_dynamic_mesh(IPLInstancedMesh mesh) {
-	if (is_global_state_init.load()) {
-		iplInstancedMeshAdd(mesh, global_state.scene);
-	} else {
+	std::lock_guard<std::mutex> lock(tick_mux);
+	if (!is_global_state_init.load()) {
 		SteamAudio::log(SteamAudio::log_error, "Adding a dynamic mesh, but SteamAudio is not initialized. Probably crashing soon.");
+		return;
 	}
+	dynamic_meshes_to_add.push_back(mesh);
 }
 
 void SteamAudioServer::remove_dynamic_mesh(IPLInstancedMesh mesh) {
-	if (!is_global_state_init.load()) {
-		return; // We've probably already deleted the scene.
+	std::lock_guard<std::mutex> lock(tick_mux);
+	if (mesh == nullptr) {
+		return;
 	}
-
+	pending_transforms.erase(mesh);
+	auto add = std::find(dynamic_meshes_to_add.begin(), dynamic_meshes_to_add.end(), mesh);
+	if (add != dynamic_meshes_to_add.end()) {
+		dynamic_meshes_to_add.erase(add);
+		return;
+	}
+	if (!is_global_state_init.load()) {
+		return;
+	}
+	wait_for_refl_idle();
 	iplInstancedMeshRemove(mesh, global_state.scene);
+	iplSceneCommit(global_state.scene);
+}
+
+void SteamAudioServer::update_dynamic_mesh_transform(IPLInstancedMesh mesh, IPLMatrix4x4 transform) {
+	std::lock_guard<std::mutex> lock(tick_mux);
+	if (!is_global_state_init.load() || mesh == nullptr) {
+		return;
+	}
+	pending_transforms[mesh] = transform;
 }
 
 SteamAudioServer::SteamAudioServer() {
@@ -332,6 +426,7 @@ SteamAudioServer::~SteamAudioServer() {
 	{
 		std::unique_lock<std::mutex> lock(refl_mux);
 		cv.notify_one();
+		refl_idle_cv.notify_all();
 	}
 	if (refl_thread.is_valid()) {
 		refl_thread->wait_to_finish();

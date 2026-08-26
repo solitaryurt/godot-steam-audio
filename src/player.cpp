@@ -105,36 +105,48 @@ SteamAudioPlayer::SteamAudioPlayer() {
 }
 SteamAudioPlayer::~SteamAudioPlayer() {
 	SteamAudio::log(SteamAudio::log_debug, "destroying player");
+	can_load_local_state.store(false);
+
 	if (!is_local_state_init.load()) {
+		if (!pb.is_null()) {
+			auto playback = dynamic_cast<SteamAudioStreamPlayback *>(pb.ptr());
+			if (playback) {
+				playback->parent = nullptr;
+			}
+		}
 		return;
 	}
 
+	unregister_from_simulator();
+
+	// Drain _mix before freeing IPL objects. tick_mux is not held here so
+	// the audio thread can finish and see can_load_local_state == false.
 	std::unique_lock lock(local_state.mux);
 
 	is_local_state_init.store(false);
-	can_load_local_state.store(false);
-	SteamAudioServer::get_singleton()->remove_local_state(&local_state);
-	auto gs = SteamAudioServer::get_singleton()->get_global_state();
+	auto gs = SteamAudioServer::get_singleton()->get_global_state(false);
+	if (gs != nullptr) {
+		iplSourceRelease(&local_state.src.src);
+		iplDirectEffectRelease(&local_state.fx.direct);
+		iplReflectionEffectRelease(&local_state.fx.refl);
+		iplAmbisonicsDecodeEffectRelease(&local_state.fx.dec);
+		iplAmbisonicsDecodeEffectRelease(&local_state.fx.refl_dec);
+		iplAmbisonicsEncodeEffectRelease(&local_state.fx.enc);
 
-	iplSourceRemove(local_state.src.src, gs->sim);
-	iplSourceRelease(&local_state.src.src);
-	iplDirectEffectRelease(&local_state.fx.direct);
-	iplReflectionEffectRelease(&local_state.fx.refl);
-	iplAmbisonicsDecodeEffectRelease(&local_state.fx.dec);
-	iplAmbisonicsDecodeEffectRelease(&local_state.fx.refl_dec);
-	iplAmbisonicsEncodeEffectRelease(&local_state.fx.enc);
-
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.in);
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.direct);
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.ambi);
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.out);
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.mono);
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.refl_ambi);
-	iplAudioBufferFree(gs->ctx, &local_state.bufs.refl_out);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.in);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.direct);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.ambi);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.out);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.mono);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.refl_ambi);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.refl_out);
+	}
 
 	if (!pb.is_null()) {
 		auto playback = dynamic_cast<SteamAudioStreamPlayback *>(pb.ptr());
-		playback->parent = nullptr;
+		if (playback) {
+			playback->parent = nullptr;
+		}
 	}
 }
 
@@ -143,26 +155,30 @@ LocalSteamAudioState *SteamAudioPlayer::get_local_state() {
 		return nullptr;
 	}
 	if (!is_local_state_init.load()) {
-		init_local_state();
+		return nullptr;
 	}
 	return &local_state;
 }
 
 void SteamAudioPlayer::init_local_state() {
+	if (is_local_state_init.load() || Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
 	SteamAudio::log(SteamAudio::log_debug, "init local state");
 	auto gs = SteamAudioServer::get_singleton()->get_global_state();
+	if (gs == nullptr) {
+		return;
+	}
 	local_state.cfg = cfg;
 
 	IPLSourceSettings src_cfg{};
 	src_cfg.flags = static_cast<IPLSimulationFlags>(IPL_SIMULATIONFLAGS_DIRECT | IPL_SIMULATIONFLAGS_REFLECTIONS);
 	handleErr(iplSourceCreate(gs->sim, &src_cfg, &local_state.src.src));
-	iplSourceAdd(local_state.src.src, gs->sim);
-	iplSimulatorCommit(gs->sim);
 
 	// TODO: check if we can't create effects globally and use their Reset functions.
 	// If we create these globally and use them for all sources, then strange things happen
 	// (e.g. one source may start to play audio from all sources and positioning gets screwed)
-	IPLDirectEffectSettings dir_effect_cfg;
+	IPLDirectEffectSettings dir_effect_cfg{};
 	dir_effect_cfg.numChannels = 2;
 	handleErr(iplDirectEffectCreate(gs->ctx, &gs->audio_cfg, &dir_effect_cfg, &local_state.fx.direct));
 
@@ -190,8 +206,35 @@ void SteamAudioPlayer::init_local_state() {
 
 	SteamAudio::log(SteamAudio::log_debug, "init local state done");
 
-	SteamAudioServer::get_singleton()->add_local_state(&this->local_state);
 	is_local_state_init.store(true);
+	register_with_simulator();
+}
+
+void SteamAudioPlayer::register_with_simulator() {
+	if (!is_local_state_init.load() || in_simulator.load()) {
+		return;
+	}
+	auto srv = SteamAudioServer::get_singleton();
+	if (srv == nullptr) {
+		return;
+	}
+	srv->add_source(local_state.src.src);
+	srv->add_local_state(&local_state);
+	in_simulator.store(true);
+}
+
+void SteamAudioPlayer::unregister_from_simulator() {
+	if (!in_simulator.load()) {
+		return;
+	}
+	auto srv = SteamAudioServer::get_singleton();
+	if (srv == nullptr) {
+		in_simulator.store(false);
+		return;
+	}
+	srv->remove_local_state(&local_state);
+	srv->remove_source(local_state.src.src);
+	in_simulator.store(false);
 }
 
 void SteamAudioPlayer::_notification(int p_what) {
@@ -200,8 +243,8 @@ void SteamAudioPlayer::_notification(int p_what) {
 			ready_internal();
 			break;
 		case NOTIFICATION_EXIT_TREE:
-			if (!Engine::get_singleton()->is_editor_hint() && is_local_state_init.load()) {
-				SteamAudioServer::get_singleton()->remove_local_state(&local_state);
+			if (!Engine::get_singleton()->is_editor_hint()) {
+				unregister_from_simulator();
 			}
 			break;
 		case NOTIFICATION_PROCESS:
@@ -246,6 +289,12 @@ void SteamAudioPlayer::ready_internal() {
 	if (cfg.occ_samples > SteamAudioConfig::max_num_occ_samples) {
 		cfg.occ_samples = SteamAudioConfig::max_num_occ_samples;
 	}
+
+	if (!is_local_state_init.load()) {
+		init_local_state();
+	} else {
+		register_with_simulator();
+	}
 }
 
 void SteamAudioPlayer::process_internal(double delta) {
@@ -266,6 +315,14 @@ void SteamAudioPlayer::process_internal(double delta) {
 
 	if (is_playing() && !get_stream_playback().is_null()) {
 		pb = get_stream_playback();
+	}
+
+	if (!Engine::get_singleton()->is_editor_hint() && can_load_local_state.load() && is_inside_tree()) {
+		if (!is_local_state_init.load()) {
+			init_local_state();
+		} else if (!in_simulator.load()) {
+			register_with_simulator();
+		}
 	}
 
 	// Sync cfg changes (e.g. runtime property toggles) into local_state.cfg.
