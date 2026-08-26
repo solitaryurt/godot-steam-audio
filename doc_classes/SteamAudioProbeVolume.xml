@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="SteamAudioProbeVolume" inherits="Node3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
+	<brief_description>
+		Volume used to generate Steam Audio probes and bake pathing data.
+	</brief_description>
+	<description>
+		Place this node so its [member size] box covers the walkable area. Call [method generate_probes] to sample probe positions, then [method bake_pathing] to compute shortest paths between probes. Save the resulting [member baked_data] with the scene. At runtime the batch is loaded into [SteamAudioServer] for pathing simulation.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="generate_probes">
+			<return type="void" />
+			<description>
+				Generate probes in this volume (centroid or uniform-floor) and store them in [member baked_data]. Does not bake pathing.
+			</description>
+		</method>
+		<method name="bake_pathing">
+			<return type="void" />
+			<description>
+				Bake pathing (probe-to-probe visibility) into [member baked_data]. Calls [method generate_probes] first if there is no batch yet. This can take a while.
+			</description>
+		</method>
+		<method name="get_probe_count">
+			<return type="int" />
+			<description>
+				Number of probes in [member baked_data], or 0 if none.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="baked_data" type="SteamAudioProbeBatchData" setter="set_baked_data" getter="get_baked_data">
+			Serialized probe batch, including pathing data after a bake.
+		</member>
+		<member name="generation" type="int" setter="set_generation" getter="get_generation" enum="SteamAudioProbeVolume.GenerationType" default="1">
+			Centroid places one probe at the volume center. Uniform Floor places probes on a grid above solid geometry.
+		</member>
+		<member name="size" type="Vector3" setter="set_size" getter="get_size" default="Vector3(10, 4, 10)">
+			Axis-aligned size of the generation volume, in meters, centered on this node.
+		</member>
+		<member name="spacing" type="float" setter="set_spacing" getter="get_spacing" default="2.0">
+			Horizontal spacing between uniform-floor probes, in meters.
+		</member>
+		<member name="height" type="float" setter="set_height" getter="get_height" default="1.5">
+			Height above the floor for uniform-floor probes, in meters.
+		</member>
+	</members>
+	<constants>
+		<constant name="GENERATION_CENTROID" value="0" enum="GenerationType">
+			One probe at the center of the volume.
+		</constant>
+		<constant name="GENERATION_UNIFORM_FLOOR" value="1" enum="GenerationType">
+			Grid of probes a fixed height above floors.
+		</constant>
+	</constants>
+</class>

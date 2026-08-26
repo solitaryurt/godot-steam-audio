@@ -46,6 +46,21 @@
             See
             [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N27IPLDistanceAttenuationModel11minDistanceE]IPLDistanceAttenuationModel.minDistance[/url], and note the distance attenuation type in godot-steam-audio is always [code]IPL_DISTANCEATTENUATIONTYPE_INVERSEDISTANCE[/code].
 		</member>
+		<member name="pathing" type="bool" setter="set_pathing_on" getter="is_pathing_on" default="false">
+			Enable baked pathing (sound around corners via [SteamAudioProbeVolume]). Requires baked pathing data in the scene.
+		</member>
+		<member name="pathing_find_alternate" type="bool" setter="set_pathing_find_alternate_on" getter="is_pathing_find_alternate_on" default="false">
+			If validation is on and a baked path is blocked by dynamic geometry, search for an alternate path.
+		</member>
+		<member name="pathing_mix_level" type="float" setter="set_pathing_mix_level" getter="get_pathing_mix_level" default="1.0">
+			Gain applied to the pathing wet mix.
+		</member>
+		<member name="pathing_order" type="int" setter="set_pathing_order" getter="get_pathing_order" default="1">
+			Ambisonic order used to spatialize pathing.
+		</member>
+		<member name="pathing_validation" type="bool" setter="set_pathing_validation_on" getter="is_pathing_validation_on" default="false">
+			Re-test baked paths against dynamic geometry (doors, movers).
+		</member>
 		<member name="occlusion" type="bool" setter="set_occlusion_on" getter="is_occlusion_on" default="true">
 			Whether SteamAudio occlusion and transmission is enabled.
 		</member>

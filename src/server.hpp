@@ -34,6 +34,7 @@ private:
 	std::vector<IPLStaticMesh> static_meshes_to_add;
 	std::vector<IPLInstancedMesh> dynamic_meshes_to_add;
 	std::unordered_map<IPLInstancedMesh, IPLMatrix4x4> pending_transforms;
+	std::vector<IPLProbeBatch> probe_batches;
 
 	// TODO: allow for multiple
 	SteamAudioListener *listener = nullptr;
@@ -65,6 +66,8 @@ public:
 	void add_dynamic_mesh(IPLInstancedMesh mesh);
 	void remove_dynamic_mesh(IPLInstancedMesh mesh);
 	void update_dynamic_mesh_transform(IPLInstancedMesh mesh, IPLMatrix4x4 transform);
+	IPLProbeBatch add_probe_batch(const uint8_t *data, size_t size);
+	void remove_probe_batch(IPLProbeBatch batch);
 
 	void tick();
 };

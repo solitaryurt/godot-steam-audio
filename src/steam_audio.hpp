@@ -64,6 +64,14 @@ struct SteamAudioSourceConfig {
 	bool is_directivity_on;
 	float dipole_weight;
 	float dipole_power;
+	bool is_pathing_on;
+	float pathing_mix_level;
+	int pathing_order;
+	bool pathing_validation;
+	bool pathing_find_alternate;
+	float vis_radius;
+	float vis_threshold;
+	float vis_range;
 };
 
 struct SteamAudioEffects {
@@ -72,6 +80,7 @@ struct SteamAudioEffects {
 	IPLAmbisonicsDecodeEffect dec;
 	IPLAmbisonicsDecodeEffect refl_dec;
 	IPLAmbisonicsEncodeEffect enc;
+	IPLPathEffect path = nullptr;
 };
 
 struct LocalSteamAudioBuffers {
@@ -82,6 +91,7 @@ struct LocalSteamAudioBuffers {
 	IPLAudioBuffer refl_out;
 	IPLAudioBuffer ambi;
 	IPLAudioBuffer out;
+	IPLAudioBuffer path_out;
 };
 
 struct LocalSteamAudioState {
@@ -89,6 +99,7 @@ struct LocalSteamAudioState {
 	Vector3 dir_to_listener;
 	IPLDirectEffectParams direct_outputs{ {} };
 	IPLReflectionEffectParams refl_outputs{ {} };
+	IPLPathEffectParams path_outputs{ {} };
 	LocalSteamAudioBuffers bufs;
 	SteamAudioEffects fx;
 	SteamAudioSourceConfig cfg;

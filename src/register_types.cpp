@@ -7,6 +7,7 @@
 #include "listener.hpp"
 #include "material.hpp"
 #include "player.hpp"
+#include "probe_volume.hpp"
 #include "server.hpp"
 #include "stream.hpp"
 
@@ -32,6 +33,8 @@ void init_ext(ModuleInitializationLevel p_level) {
 		ClassDB::register_class<SteamAudioDynamicGeometry>();
 		ClassDB::register_class<SteamAudioMaterial>();
 		ClassDB::register_class<SteamAudioConfig>();
+		ClassDB::register_class<SteamAudioProbeBatchData>();
+		ClassDB::register_class<SteamAudioProbeVolume>();
 		ClassDB::register_class<SteamAudioPlayer>();
 	}
 

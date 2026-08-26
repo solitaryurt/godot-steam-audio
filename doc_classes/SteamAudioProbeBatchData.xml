@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="SteamAudioProbeBatchData" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
+	<brief_description>
+		Serialized Steam Audio probe batch (probe positions plus optional baked pathing).
+	</brief_description>
+	<description>
+		Created by [SteamAudioProbeVolume.generate_probes] and [SteamAudioProbeVolume.bake_pathing]. Store this resource with your map.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="bytes" type="PackedByteArray" setter="set_bytes" getter="get_bytes">
+			Raw [code]IPLProbeBatch[/code] bytes.
+		</member>
+		<member name="pathing_baked" type="bool" setter="set_pathing_baked" getter="is_pathing_baked" default="false">
+			True after a successful [method SteamAudioProbeVolume.bake_pathing].
+		</member>
+		<member name="probe_count" type="int" setter="set_probe_count" getter="get_probe_count" default="0">
+			Number of probes in this batch.
+		</member>
+	</members>
+</class>

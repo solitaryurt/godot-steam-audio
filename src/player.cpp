@@ -82,6 +82,23 @@ void SteamAudioPlayer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "directivity"), "set_directivity_on", "is_directivity_on");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "dipole_weight", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), "set_dipole_weight", "get_dipole_weight");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "dipole_power", PROPERTY_HINT_RANGE, "0.0,4.0,0.01"), "set_dipole_power", "get_dipole_power");
+
+	ADD_GROUP("Pathing", "");
+	ClassDB::bind_method(D_METHOD("is_pathing_on"), &SteamAudioPlayer::is_pathing_on);
+	ClassDB::bind_method(D_METHOD("set_pathing_on", "p_pathing_on"), &SteamAudioPlayer::set_pathing_on);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pathing"), "set_pathing_on", "is_pathing_on");
+	ClassDB::bind_method(D_METHOD("get_pathing_mix_level"), &SteamAudioPlayer::get_pathing_mix_level);
+	ClassDB::bind_method(D_METHOD("set_pathing_mix_level", "p_level"), &SteamAudioPlayer::set_pathing_mix_level);
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "pathing_mix_level", PROPERTY_HINT_RANGE, "0.0,4.0,0.01"), "set_pathing_mix_level", "get_pathing_mix_level");
+	ClassDB::bind_method(D_METHOD("get_pathing_order"), &SteamAudioPlayer::get_pathing_order);
+	ClassDB::bind_method(D_METHOD("set_pathing_order", "p_order"), &SteamAudioPlayer::set_pathing_order);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "pathing_order", PROPERTY_HINT_RANGE, "0,3,1"), "set_pathing_order", "get_pathing_order");
+	ClassDB::bind_method(D_METHOD("is_pathing_validation_on"), &SteamAudioPlayer::is_pathing_validation_on);
+	ClassDB::bind_method(D_METHOD("set_pathing_validation_on", "p_on"), &SteamAudioPlayer::set_pathing_validation_on);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pathing_validation"), "set_pathing_validation_on", "is_pathing_validation_on");
+	ClassDB::bind_method(D_METHOD("is_pathing_find_alternate_on"), &SteamAudioPlayer::is_pathing_find_alternate_on);
+	ClassDB::bind_method(D_METHOD("set_pathing_find_alternate_on", "p_on"), &SteamAudioPlayer::set_pathing_find_alternate_on);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pathing_find_alternate"), "set_pathing_find_alternate_on", "is_pathing_find_alternate_on");
 }
 
 SteamAudioPlayer::SteamAudioPlayer() {
@@ -132,6 +149,9 @@ SteamAudioPlayer::~SteamAudioPlayer() {
 		iplAmbisonicsDecodeEffectRelease(&local_state.fx.dec);
 		iplAmbisonicsDecodeEffectRelease(&local_state.fx.refl_dec);
 		iplAmbisonicsEncodeEffectRelease(&local_state.fx.enc);
+		if (local_state.fx.path) {
+			iplPathEffectRelease(&local_state.fx.path);
+		}
 
 		iplAudioBufferFree(gs->ctx, &local_state.bufs.in);
 		iplAudioBufferFree(gs->ctx, &local_state.bufs.direct);
@@ -140,6 +160,7 @@ SteamAudioPlayer::~SteamAudioPlayer() {
 		iplAudioBufferFree(gs->ctx, &local_state.bufs.mono);
 		iplAudioBufferFree(gs->ctx, &local_state.bufs.refl_ambi);
 		iplAudioBufferFree(gs->ctx, &local_state.bufs.refl_out);
+		iplAudioBufferFree(gs->ctx, &local_state.bufs.path_out);
 	}
 
 	if (!pb.is_null()) {
@@ -172,7 +193,8 @@ void SteamAudioPlayer::init_local_state() {
 	local_state.cfg = cfg;
 
 	IPLSourceSettings src_cfg{};
-	src_cfg.flags = static_cast<IPLSimulationFlags>(IPL_SIMULATIONFLAGS_DIRECT | IPL_SIMULATIONFLAGS_REFLECTIONS);
+	src_cfg.flags = static_cast<IPLSimulationFlags>(
+			IPL_SIMULATIONFLAGS_DIRECT | IPL_SIMULATIONFLAGS_REFLECTIONS | IPL_SIMULATIONFLAGS_PATHING);
 	handleErr(iplSourceCreate(gs->sim, &src_cfg, &local_state.src.src));
 
 	// TODO: check if we can't create effects globally and use their Reset functions.
@@ -195,6 +217,13 @@ void SteamAudioPlayer::init_local_state() {
 	local_state.fx.enc = create_ambisonics_encode_effect(
 			gs->ctx, gs->audio_cfg);
 
+	IPLPathEffectSettings path_cfg{};
+	path_cfg.maxOrder = SteamAudioConfig::max_ambisonics_order;
+	path_cfg.spatialize = IPL_TRUE;
+	path_cfg.speakerLayout.type = IPL_SPEAKERLAYOUTTYPE_STEREO;
+	path_cfg.hrtf = gs->hrtf;
+	handleErr(iplPathEffectCreate(gs->ctx, &gs->audio_cfg, &path_cfg, &local_state.fx.path), "iplPathEffectCreate");
+
 	handleErr(iplAudioBufferAllocate(gs->ctx, 2, gs->audio_cfg.frameSize, &local_state.bufs.in));
 	handleErr(iplAudioBufferAllocate(gs->ctx, 2, gs->audio_cfg.frameSize, &local_state.bufs.direct));
 	handleErr(iplAudioBufferAllocate(gs->ctx, ambisonic_channels_from(local_state.cfg.ambisonics_order), gs->audio_cfg.frameSize, &local_state.bufs.ambi));
@@ -202,6 +231,7 @@ void SteamAudioPlayer::init_local_state() {
 	handleErr(iplAudioBufferAllocate(gs->ctx, 1, gs->audio_cfg.frameSize, &local_state.bufs.mono));
 	handleErr(iplAudioBufferAllocate(gs->ctx, ambisonic_channels_from(local_state.cfg.ambisonics_order), gs->audio_cfg.frameSize, &local_state.bufs.refl_ambi));
 	handleErr(iplAudioBufferAllocate(gs->ctx, 2, gs->audio_cfg.frameSize, &local_state.bufs.refl_out));
+	handleErr(iplAudioBufferAllocate(gs->ctx, 2, gs->audio_cfg.frameSize, &local_state.bufs.path_out));
 	local_state.src.player = this;
 
 	SteamAudio::log(SteamAudio::log_debug, "init local state done");
@@ -431,6 +461,17 @@ void SteamAudioPlayer::set_dipole_power(float p_dipole_power) { cfg.dipole_power
 
 bool SteamAudioPlayer::is_ambisonics_on() { return cfg.is_ambisonics_on; }
 void SteamAudioPlayer::set_ambisonics_on(bool p_ambisonics_on) { cfg.is_ambisonics_on = p_ambisonics_on; cfg_dirty.store(true); }
+
+bool SteamAudioPlayer::is_pathing_on() { return cfg.is_pathing_on; }
+void SteamAudioPlayer::set_pathing_on(bool p_pathing_on) { cfg.is_pathing_on = p_pathing_on; cfg_dirty.store(true); }
+float SteamAudioPlayer::get_pathing_mix_level() { return cfg.pathing_mix_level; }
+void SteamAudioPlayer::set_pathing_mix_level(float p_level) { cfg.pathing_mix_level = p_level; cfg_dirty.store(true); }
+int SteamAudioPlayer::get_pathing_order() { return cfg.pathing_order; }
+void SteamAudioPlayer::set_pathing_order(int p_order) { cfg.pathing_order = p_order; cfg_dirty.store(true); }
+bool SteamAudioPlayer::is_pathing_validation_on() { return cfg.pathing_validation; }
+void SteamAudioPlayer::set_pathing_validation_on(bool p_on) { cfg.pathing_validation = p_on; cfg_dirty.store(true); }
+bool SteamAudioPlayer::is_pathing_find_alternate_on() { return cfg.pathing_find_alternate; }
+void SteamAudioPlayer::set_pathing_find_alternate_on(bool p_on) { cfg.pathing_find_alternate = p_on; cfg_dirty.store(true); }
 
 PackedStringArray SteamAudioPlayer::_get_configuration_warnings() const {
 	PackedStringArray res;

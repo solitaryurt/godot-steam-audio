@@ -48,6 +48,7 @@ static void set_buf_samples(LocalSteamAudioState *ls, int n) {
 	ls->bufs.out.numSamples = n;
 	ls->bufs.refl_ambi.numSamples = n;
 	ls->bufs.refl_out.numSamples = n;
+	ls->bufs.path_out.numSamples = n;
 }
 
 int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int32_t frames) {
@@ -177,6 +178,24 @@ int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int
 
 			SteamAudio::log(SteamAudio::log_debug, "mixing: mixing reflection and direct buffers");
 			iplAudioBufferMix(gs->ctx, &ls->bufs.refl_out, &ls->bufs.out);
+		}
+		if (ls->cfg.is_pathing_on && ls->fx.path && ls->path_outputs.shCoeffs) {
+			IPLPathEffectParams path_params = ls->path_outputs;
+			path_params.order = ls->cfg.pathing_order;
+			path_params.binaural = IPL_TRUE;
+			path_params.hrtf = gs->hrtf;
+			path_params.listener = gs->listener_coords;
+			iplAudioBufferDownmix(gs->ctx, &ls->bufs.in, &ls->bufs.mono);
+			iplPathEffectApply(ls->fx.path, &path_params, &ls->bufs.mono, &ls->bufs.path_out);
+			float mix = ls->cfg.pathing_mix_level;
+			if (mix != 1.0f) {
+				for (int c = 0; c < ls->bufs.path_out.numChannels; c++) {
+					for (int j = 0; j < chunk; j++) {
+						ls->bufs.path_out.data[c][j] *= mix;
+					}
+				}
+			}
+			iplAudioBufferMix(gs->ctx, &ls->bufs.path_out, &ls->bufs.out);
 		}
 		gs->refl_ir_lock.unlock();
 

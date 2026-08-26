@@ -69,3 +69,11 @@ else:
     )
 
 Default(library)
+
+test_env = env.Clone()
+test_env["LINKFLAGS"] = [f for f in test_env.get("LINKFLAGS", []) if "version-script" not in str(f)]
+test_env.Replace(LIBS=["phonon"])
+if env["platform"] == "linux":
+    test_env.Append(LINKFLAGS=["-Wl,-rpath,{}".format(env.Dir(f"{steam_audio_lib_path}/linux-x64").abspath)])
+probe_test = test_env.Program("tests/probe_batch_test", ["tests/probe_batch_test.cpp", "src/probe_core.cpp"])
+Alias("test", probe_test)

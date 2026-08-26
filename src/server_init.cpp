@@ -67,7 +67,9 @@ IPLAmbisonicsEncodeEffect create_ambisonics_encode_effect(IPLContext ctx, IPLAud
 
 IPLSimulator create_simulator(IPLContext ctx, IPLAudioSettings audio_cfg, IPLSceneSettings scene_cfg) {
 	IPLSimulationSettings sim_cfg{};
-	sim_cfg.flags = static_cast<IPLSimulationFlags>(IPL_SIMULATIONFLAGS_DIRECT | IPL_SIMULATIONFLAGS_REFLECTIONS);
+	sim_cfg.flags = static_cast<IPLSimulationFlags>(
+			IPL_SIMULATIONFLAGS_DIRECT | IPL_SIMULATIONFLAGS_REFLECTIONS | IPL_SIMULATIONFLAGS_PATHING);
+	sim_cfg.numVisSamples = 4;
 	sim_cfg.sceneType = scene_cfg.type;
 	sim_cfg.frameSize = audio_cfg.frameSize;
 	sim_cfg.samplingRate = audio_cfg.samplingRate;

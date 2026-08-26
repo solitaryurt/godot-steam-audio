@@ -1,4 +1,6 @@
 #include "server.hpp"
+#include "probe_core.hpp"
+#include <cstdio>
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/project_settings.hpp"
 #include "godot_cpp/core/class_db.hpp"
@@ -221,6 +223,35 @@ void SteamAudioServer::tick() {
 		iplSourceSetInputs(ls->src.src, IPL_SIMULATIONFLAGS_REFLECTIONS, &inputs);
 	}
 
+	for (auto ls : self->local_states) {
+		if (ls->src.player == nullptr || !ls->src.player->is_inside_tree() || !ls->src.player->is_playing()) {
+			continue;
+		}
+		SteamAudioSourceConfig cfg_copy;
+		{
+			std::unique_lock lock(ls->mux);
+			cfg_copy = ls->cfg;
+			IPLSimulationOutputs outputs{};
+			iplSourceGetOutputs(ls->src.src, IPL_SIMULATIONFLAGS_PATHING, &outputs);
+			std::lock_guard ir_lock(global_state.refl_ir_lock);
+			ls->path_outputs = outputs.pathing;
+		}
+		if (!cfg_copy.is_pathing_on || probe_batches.empty()) {
+			continue;
+		}
+		IPLSimulationInputs inputs{};
+		inputs.flags = IPL_SIMULATIONFLAGS_PATHING;
+		inputs.source = ipl_coords_from(ls->src.player->get_global_transform());
+		inputs.pathingProbes = probe_batches.front();
+		inputs.pathingOrder = cfg_copy.pathing_order;
+		inputs.visRadius = cfg_copy.vis_radius;
+		inputs.visThreshold = cfg_copy.vis_threshold;
+		inputs.visRange = cfg_copy.vis_range;
+		inputs.enableValidation = cfg_copy.pathing_validation ? IPL_TRUE : IPL_FALSE;
+		inputs.findAlternatePaths = cfg_copy.pathing_find_alternate ? IPL_TRUE : IPL_FALSE;
+		iplSourceSetInputs(ls->src.src, IPL_SIMULATIONFLAGS_PATHING, &inputs);
+	}
+
 	if (listener == nullptr || !listener->is_inside_tree()) {
 		return;
 	}
@@ -232,6 +263,7 @@ void SteamAudioServer::tick() {
 	shared_inputs.order = listener->get_refl_ambisonics_order();
 	shared_inputs.irradianceMinDistance = listener->get_irradiance_min_dist();
 	iplSimulatorSetSharedInputs(global_state.sim, IPL_SIMULATIONFLAGS_REFLECTIONS, &shared_inputs);
+	iplSimulatorSetSharedInputs(global_state.sim, IPL_SIMULATIONFLAGS_PATHING, &shared_inputs);
 
 	{
 		// notify reflection thread and tell it it can start running again
@@ -326,6 +358,10 @@ void SteamAudioServer::run_refl_sim() {
 		}
 		SteamAudio::log(SteamAudio::log_debug, "running reflection sim");
 		iplSimulatorRunReflections(global_state.sim);
+		if (!probe_batches.empty()) {
+			SteamAudio::log(SteamAudio::log_debug, "running pathing sim");
+			iplSimulatorRunPathing(global_state.sim);
+		}
 		{
 			std::unique_lock<std::mutex> lock(this->refl_mux);
 			is_refl_thread_processing.store(false);
@@ -425,6 +461,43 @@ void SteamAudioServer::update_dynamic_mesh_transform(IPLInstancedMesh mesh, IPLM
 	pending_transforms[mesh] = transform;
 }
 
+IPLProbeBatch SteamAudioServer::add_probe_batch(const uint8_t *data, size_t size) {
+	std::lock_guard<std::mutex> lock(tick_mux);
+	if (!is_global_state_init.load() || data == nullptr || size == 0) {
+		return nullptr;
+	}
+	wait_for_refl_idle();
+	std::string err;
+	IPLProbeBatch batch = nullptr;
+	int count = 0;
+	if (!probe_core_load_batch(global_state.ctx, data, size, &batch, &count, &err)) {
+		SteamAudio::log(SteamAudio::log_error, err.c_str());
+		return nullptr;
+	}
+	iplSimulatorAddProbeBatch(global_state.sim, batch);
+	iplSimulatorCommit(global_state.sim);
+	probe_batches.push_back(batch);
+	char msg[96];
+	snprintf(msg, sizeof(msg), "Loaded probe batch (%d probes)", count);
+	SteamAudio::log(SteamAudio::log_info, msg);
+	return batch;
+}
+
+void SteamAudioServer::remove_probe_batch(IPLProbeBatch batch) {
+	std::lock_guard<std::mutex> lock(tick_mux);
+	if (batch == nullptr || !is_global_state_init.load()) {
+		return;
+	}
+	wait_for_refl_idle();
+	auto it = std::find(probe_batches.begin(), probe_batches.end(), batch);
+	if (it != probe_batches.end()) {
+		probe_batches.erase(it);
+	}
+	iplSimulatorRemoveProbeBatch(global_state.sim, batch);
+	iplSimulatorCommit(global_state.sim);
+	iplProbeBatchRelease(&batch);
+}
+
 SteamAudioServer::SteamAudioServer() {
 	self = this;
 	is_global_state_init.store(false);
@@ -449,6 +522,14 @@ SteamAudioServer::~SteamAudioServer() {
 		return;
 	}
 	SteamAudio::log(SteamAudio::log_debug, "destroying steam audio server");
+
+	for (auto &b : probe_batches) {
+		if (b) {
+			iplSimulatorRemoveProbeBatch(global_state.sim, b);
+			iplProbeBatchRelease(&b);
+		}
+	}
+	probe_batches.clear();
 
 	iplAmbisonicsDecodeEffectRelease(&self->global_state.ambi_dec_effect);
 	iplAmbisonicsEncodeEffectRelease(&self->global_state.ambi_enc_effect);

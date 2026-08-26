@@ -1,7 +1,9 @@
 .vscode
 *.pdb
 *.os
+*.o
 src/*.obj
+tests/probe_batch_test
 .sconsign.dblite
 project/addons/godot-steam-audio/bin/*.so*
 project/addons/godot-steam-audio/bin/*.dll

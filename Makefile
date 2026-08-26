@@ -1,3 +1,7 @@
+test:
+	scons platform=linux arch=x86_64 target=template_debug test
+	./tests/probe_batch_test
+
 install-steam-audio:
 	curl -s https://api.github.com/repos/ValveSoftware/steam-audio/releases/latest \
 		| grep -E 'browser_download.*steamaudio_[0-9\.]+\.zip' \
