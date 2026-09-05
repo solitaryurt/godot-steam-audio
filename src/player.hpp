@@ -102,6 +102,8 @@ public:
 
 	bool is_reflection_on();
 	void set_reflection_on(bool p_reflection_on);
+	bool is_baked_reverb_on();
+	void set_baked_reverb_on(bool p_baked_reverb_on);
 
 	bool is_occlusion_on();
 	void set_occlusion_on(bool p_occlusion_on);

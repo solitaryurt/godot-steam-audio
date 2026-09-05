@@ -39,8 +39,13 @@
 		<member name="distance_attenuation" type="bool" setter="set_dist_attn_on" getter="is_dist_attn_on" default="false">
             Whether SteamAudio distance attenuation is enabled. Keep in mind that this is disabled by default, and enabling it will disable Godot's built-in attenuation, which you can only re-enable when you disable this.
 		</member>
+		<member name="baked_reverb" type="bool" setter="set_baked_reverb_on" getter="is_baked_reverb_on" default="false">
+			Opt in to listener-centric baked reverb from [SteamAudioProbeVolume] when [member reflection] is enabled. This is a room response at the listener, not source-to-listener reflections. By default reflections remain real-time, even when baked data is loaded.
+			The baked wet send uses the source's Steam Audio distance attenuation when enabled; otherwise Godot's attenuation applies to the final mix. Real-time reflections are not attenuated again in the wet send.
+			Falls back to real-time when a visible reflection-bearing probe neighborhood cannot be guaranteed. Overlapping path-only batches and missing probe metadata prevent baked selection. Steam Audio selects at most eight influencing probes per batch before ray occlusion; batches exceeding that limit cannot establish a valid neighborhood here. Probe visibility uses the committed Steam Audio scene, including dynamic geometry.
+		</member>
 		<member name="max_reflection_distance" type="float" setter="set_max_reflection_distance" getter="get_max_reflection_distance" default="10000.0">
-            The maximum distance from the listener at which reflection simulation is run for this audio source. Keep in mind that this does not disable reflection if it has already been simulated, it just doesn't update the effect.
+            The maximum distance from the listener at which reflection simulation and its wet mix are enabled for this audio source.
 		</member>
 		<member name="min_attenuation_distance" type="float" setter="set_min_attenuation_distance" getter="get_min_attenuation_distance" default="0.0">
             See
@@ -48,6 +53,7 @@
 		</member>
 		<member name="pathing" type="bool" setter="set_pathing_on" getter="is_pathing_on" default="false">
 			Enable baked pathing (sound around corners via [SteamAudioProbeVolume]). Requires baked pathing data in the scene.
+			For occluded sources, pathing is muted when a visible source/listener probe neighborhood cannot be established, including missing probe metadata or more than eight influencing probes per batch. This avoids replaying stale SDK path coefficients.
 		</member>
 		<member name="pathing_find_alternate" type="bool" setter="set_pathing_find_alternate_on" getter="is_pathing_find_alternate_on" default="false">
 			If validation is on and a baked path is blocked by dynamic geometry, search for an alternate path.
@@ -56,7 +62,7 @@
 			Gain applied to the pathing wet mix.
 		</member>
 		<member name="pathing_order" type="int" setter="set_pathing_order" getter="get_pathing_order" default="1">
-			Ambisonic order used to spatialize pathing.
+			Ambisonic order used to spatialize pathing, clamped to the simulator's allocated maximum. Audio uses the order of the completed simulation, not a setting changed while that simulation was running.
 		</member>
 		<member name="pathing_validation" type="bool" setter="set_pathing_validation_on" getter="is_pathing_validation_on" default="false">
 			Re-test baked paths against dynamic geometry (doors, movers).

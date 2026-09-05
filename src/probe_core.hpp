@@ -19,25 +19,47 @@ IPLScene probe_core_create_box_scene(IPLContext ctx, float hx, float hy, float h
 bool probe_core_add_box(IPLScene scene, float cx, float cy, float cz, float hx, float hy, float hz, std::string *err = nullptr);
 void probe_core_destroy_scene(IPLScene *scene);
 
-// volume maps the unit cube [0,1]^3 into world space (row-major, p' = M p).
+// volume maps [-0.5,0.5]^3 into world space, using SDK 4.5.3's probe matrix
+// convention (column-major storage). Prefer probe_core_volume_matrix.
 bool probe_core_generate_batch(IPLContext ctx, IPLScene scene, IPLProbeGenerationType type,
 		IPLMatrix4x4 volume, float spacing, float height,
-		IPLProbeBatch *out_batch, int *out_count, std::string *err = nullptr);
+		IPLProbeBatch *out_batch, int *out_count, std::string *err = nullptr,
+		std::vector<IPLVector3> *out_positions = nullptr, std::vector<float> *out_radii = nullptr);
 
 bool probe_core_save_batch(IPLContext ctx, IPLProbeBatch batch, std::vector<uint8_t> *out, std::string *err = nullptr);
 bool probe_core_load_batch(IPLContext ctx, const uint8_t *data, size_t size,
 		IPLProbeBatch *out_batch, int *out_count, std::string *err = nullptr);
 
+// Bakers replace their target layer in a job-local batch, preserving other layers.
+// Callers must serialize all bake jobs, including cancellation delivery: SDK
+// baker state is process-global, not per context. Success requires new layer data.
+// Cancel via the matching core API during the bake (e.g. its progress callback),
+// not before SDK entry. Cancellation returns false; release the job-local batch
+// without querying, saving, removing data from, or rebaking it.
+// Callers must also discard jobs with a late cancellation request after return.
+// Pathing uses finish-and-discard: SDK 4.5.3 native cancellation is unsafe. The
+// async editor stays busy until the worker finishes; exit/join can wait for the
+// full bake. Reflections use native cancellation and can leave partial layers.
 bool probe_core_bake_pathing(IPLContext ctx, IPLScene scene, IPLProbeBatch batch,
 		int num_samples, float radius, float threshold, float vis_range, float path_range,
-		int num_threads, std::string *err = nullptr);
+		int num_threads, std::string *err = nullptr,
+		IPLProgressCallback progress_cb = nullptr, void *progress_user = nullptr);
+void probe_core_cancel_pathing_bake(IPLContext ctx);
+
+bool probe_core_bake_reflections(IPLContext ctx, IPLScene scene, IPLProbeBatch batch,
+		int num_rays, int num_diffuse_samples, int num_bounces,
+		float simulated_duration, float saved_duration, int order, int num_threads,
+		float irradiance_min_distance, int bake_batch_size, std::string *err = nullptr,
+		IPLProgressCallback progress_cb = nullptr, void *progress_user = nullptr);
+void probe_core_cancel_reflections_bake(IPLContext ctx);
 
 int probe_core_batch_num_probes(IPLProbeBatch batch);
 IPLsize probe_core_pathing_data_size(IPLProbeBatch batch);
+IPLsize probe_core_reflections_data_size(IPLProbeBatch batch);
 
 void probe_core_release_batch(IPLProbeBatch *batch);
 
-// Unit-cube -> centered box of `size` at `origin`, axis-aligned.
+// SDK probe-local cube [-0.5,0.5]^3 -> box of full `size` at `origin`, axis-aligned.
 IPLMatrix4x4 probe_core_volume_matrix(float ox, float oy, float oz, float sx, float sy, float sz);
 
 #endif // STEAM_AUDIO_PROBE_CORE_H

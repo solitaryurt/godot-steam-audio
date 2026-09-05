@@ -1,5 +1,11 @@
 #include "probe_core.hpp"
+#include <atomic>
 #include <cstring>
+
+// Like the SDK's process-global bakers, these flags require serialized jobs.
+// Atomic flags also cover cancellation delivered from another thread.
+static std::atomic<bool> pathing_bake_cancelled{ false };
+static std::atomic<bool> reflections_bake_cancelled{ false };
 
 static bool fail(std::string *err, const char *msg) {
 	if (err) {
@@ -9,12 +15,13 @@ static bool fail(std::string *err, const char *msg) {
 }
 
 IPLMatrix4x4 probe_core_volume_matrix(float ox, float oy, float oz, float sx, float sy, float sz) {
-	// Maps (0,0,0) -> origin - size/2, (1,1,1) -> origin + size/2.
+	// SDK 4.5.3 probe generation reads column-major storage, despite the public
+	// matrix's row-major documentation. Its local box is [-0.5, 0.5]^3.
 	return IPLMatrix4x4{ {
-			{ sx, 0.f, 0.f, ox - 0.5f * sx },
-			{ 0.f, sy, 0.f, oy - 0.5f * sy },
-			{ 0.f, 0.f, sz, oz - 0.5f * sz },
-			{ 0.f, 0.f, 0.f, 1.f },
+			{ sx, 0.f, 0.f, 0.f },
+			{ 0.f, sy, 0.f, 0.f },
+			{ 0.f, 0.f, sz, 0.f },
+			{ ox, oy, oz, 1.f },
 	} };
 }
 
@@ -124,7 +131,8 @@ void probe_core_destroy_scene(IPLScene *scene) {
 
 bool probe_core_generate_batch(IPLContext ctx, IPLScene scene, IPLProbeGenerationType type,
 		IPLMatrix4x4 volume, float spacing, float height,
-		IPLProbeBatch *out_batch, int *out_count, std::string *err) {
+		IPLProbeBatch *out_batch, int *out_count, std::string *err,
+		std::vector<IPLVector3> *out_positions, std::vector<float> *out_radii) {
 	if (ctx == nullptr || scene == nullptr || out_batch == nullptr) {
 		return fail(err, "null argument to probe_core_generate_batch");
 	}
@@ -148,6 +156,23 @@ bool probe_core_generate_batch(IPLContext ctx, IPLScene scene, IPLProbeGeneratio
 	if (n <= 0) {
 		iplProbeArrayRelease(&arr);
 		return fail(err, "probe generation produced 0 probes");
+	}
+	if (out_positions || out_radii) {
+		if (out_positions) {
+			out_positions->resize(size_t(n));
+		}
+		if (out_radii) {
+			out_radii->resize(size_t(n));
+		}
+		for (int i = 0; i < n; i++) {
+			IPLSphere probe = iplProbeArrayGetProbe(arr, i);
+			if (out_positions) {
+				(*out_positions)[size_t(i)] = probe.center;
+			}
+			if (out_radii) {
+				(*out_radii)[size_t(i)] = probe.radius;
+			}
+		}
 	}
 
 	IPLProbeBatch batch = nullptr;
@@ -202,6 +227,9 @@ bool probe_core_load_batch(IPLContext ctx, const uint8_t *data, size_t size,
 	if (load_err != IPL_STATUS_SUCCESS || batch == nullptr) {
 		return fail(err, "iplProbeBatchLoad failed");
 	}
+	// Load does not rebuild the probe tree; RunPathing uses getInfluencingProbes
+	// which dereferences it. Unity always Commit()s after load.
+	iplProbeBatchCommit(batch);
 	if (out_count) {
 		*out_count = iplProbeBatchGetNumProbes(batch);
 	}
@@ -211,7 +239,7 @@ bool probe_core_load_batch(IPLContext ctx, const uint8_t *data, size_t size,
 
 bool probe_core_bake_pathing(IPLContext ctx, IPLScene scene, IPLProbeBatch batch,
 		int num_samples, float radius, float threshold, float vis_range, float path_range,
-		int num_threads, std::string *err) {
+		int num_threads, std::string *err, IPLProgressCallback progress_cb, void *progress_user) {
 	if (ctx == nullptr || scene == nullptr || batch == nullptr) {
 		return fail(err, "null argument to probe_core_bake_pathing");
 	}
@@ -230,8 +258,82 @@ bool probe_core_bake_pathing(IPLContext ctx, IPLScene scene, IPLProbeBatch batch
 	params.pathRange = path_range;
 	params.numThreads = num_threads > 0 ? num_threads : 1;
 
-	iplPathBakerBake(ctx, &params, nullptr, nullptr);
+	// Only the newly baked layer may establish success. The caller owns this
+	// job-local batch; leave other baked layers untouched.
+	iplProbeBatchRemoveData(batch, &id);
+	pathing_bake_cancelled.store(false);
+	iplPathBakerBake(ctx, &params, progress_cb, progress_user);
+	// Pathing cancellation finishes the SDK bake, then discards its result.
+	// The caller must release this job-local batch without publishing it.
+	if (pathing_bake_cancelled.load()) {
+		return fail(err, "pathing bake cancelled");
+	}
+	if (iplProbeBatchGetDataSize(batch, &id) == 0) {
+		return fail(err, "pathing bake produced no data");
+	}
 	return true;
+}
+
+void probe_core_cancel_pathing_bake(IPLContext ctx) {
+	if (ctx) {
+		// SDK 4.5.3 native cancellation can wake workers before their job graph
+		// exists. Finish-and-discard avoids that race and unsafe partial layers.
+		pathing_bake_cancelled.store(true);
+	}
+}
+
+bool probe_core_bake_reflections(IPLContext ctx, IPLScene scene, IPLProbeBatch batch,
+		int num_rays, int num_diffuse_samples, int num_bounces,
+		float simulated_duration, float saved_duration, int order, int num_threads,
+		float irradiance_min_distance, int bake_batch_size, std::string *err,
+		IPLProgressCallback progress_cb, void *progress_user) {
+	if (ctx == nullptr || scene == nullptr || batch == nullptr) {
+		return fail(err, "null argument to probe_core_bake_reflections");
+	}
+	IPLBakedDataIdentifier id{};
+	id.type = IPL_BAKEDDATATYPE_REFLECTIONS;
+	id.variation = IPL_BAKEDDATAVARIATION_REVERB;
+
+	IPLReflectionsBakeParams params{};
+	params.scene = scene;
+	params.probeBatch = batch;
+	params.sceneType = IPL_SCENETYPE_DEFAULT;
+	params.identifier = id;
+	params.bakeFlags = IPL_REFLECTIONSBAKEFLAGS_BAKECONVOLUTION;
+	params.numRays = num_rays > 0 ? num_rays : 1;
+	params.numDiffuseSamples = num_diffuse_samples > 0 ? num_diffuse_samples : 1;
+	params.numBounces = num_bounces > 0 ? num_bounces : 1;
+	params.simulatedDuration = simulated_duration > 0.f ? simulated_duration : 0.1f;
+	params.savedDuration = saved_duration > 0.f ? saved_duration : params.simulatedDuration;
+	if (params.savedDuration > params.simulatedDuration) {
+		params.savedDuration = params.simulatedDuration;
+	}
+	params.order = order >= 0 ? order : 0;
+	params.numThreads = num_threads > 0 ? num_threads : 1;
+	params.rayBatchSize = 1;
+	params.irradianceMinDistance = irradiance_min_distance > 0.f ? irradiance_min_distance : 1.f;
+	params.bakeBatchSize = bake_batch_size > 0 ? bake_batch_size : 1;
+
+	// Reflection rebakes otherwise reuse the old layer, even if no new data is produced.
+	iplProbeBatchRemoveData(batch, &id);
+	reflections_bake_cancelled.store(false);
+	iplReflectionsBakerBake(ctx, &params, progress_cb, progress_user);
+	if (reflections_bake_cancelled.load()) {
+		return fail(err, "reflection bake cancelled");
+	}
+	if (iplProbeBatchGetDataSize(batch, &id) == 0) {
+		return fail(err, "reflection bake produced no data");
+	}
+	return true;
+}
+
+void probe_core_cancel_reflections_bake(IPLContext ctx) {
+	if (ctx) {
+		reflections_bake_cancelled.store(true);
+		// Unlike pathing, SDK 4.5.3 only sets an atomic flag here; it stops
+		// between probes without cancelling the worker pool.
+		iplReflectionsBakerCancelBake(ctx);
+	}
 }
 
 int probe_core_batch_num_probes(IPLProbeBatch batch) {
@@ -248,6 +350,16 @@ IPLsize probe_core_pathing_data_size(IPLProbeBatch batch) {
 	IPLBakedDataIdentifier id{};
 	id.type = IPL_BAKEDDATATYPE_PATHING;
 	id.variation = IPL_BAKEDDATAVARIATION_DYNAMIC;
+	return iplProbeBatchGetDataSize(batch, &id);
+}
+
+IPLsize probe_core_reflections_data_size(IPLProbeBatch batch) {
+	if (batch == nullptr) {
+		return 0;
+	}
+	IPLBakedDataIdentifier id{};
+	id.type = IPL_BAKEDDATATYPE_REFLECTIONS;
+	id.variation = IPL_BAKEDDATAVARIATION_REVERB;
 	return iplProbeBatchGetDataSize(batch, &id);
 }
 

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="SteamAudioProbeBatchData" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
 	<brief_description>
-		Serialized Steam Audio probe batch (probe positions plus optional baked pathing).
+		Serialized Steam Audio probe batch with optional pathing and reflection data.
 	</brief_description>
 	<description>
-		Created by [SteamAudioProbeVolume.generate_probes] and [SteamAudioProbeVolume.bake_pathing]. Store this resource with your map.
+		Created by [SteamAudioProbeVolume.generate_probes], [SteamAudioProbeVolume.bake_pathing], and [SteamAudioProbeVolume.bake_reflections].
 	</description>
 	<tutorials>
 	</tutorials>
@@ -17,6 +17,15 @@
 		</member>
 		<member name="probe_count" type="int" setter="set_probe_count" getter="get_probe_count" default="0">
 			Number of probes in this batch.
+		</member>
+		<member name="probe_positions" type="PackedVector3Array" setter="set_probe_positions" getter="get_probe_positions" default="PackedVector3Array()">
+			World-space probe positions captured from generated SDK probes, used for gizmos and runtime reflection lookup. Must match the serialized batch's probe order and count.
+		</member>
+		<member name="probe_radii" type="PackedFloat32Array" setter="set_probe_radii" getter="get_probe_radii" default="PackedFloat32Array()">
+			SDK influence radius corresponding to each probe position. Legacy resources missing positions or radii must be explicitly regenerated before baking; these values cannot be inferred from the current volume settings.
+		</member>
+		<member name="reflections_baked" type="bool" setter="set_reflections_baked" getter="are_reflections_baked" default="false">
+			True after a successful listener-centric reflection bake.
 		</member>
 	</members>
 </class>

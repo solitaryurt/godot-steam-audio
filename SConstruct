@@ -54,6 +54,7 @@ elif env["platform"] == "ios":
     env.Append(LIBPATH=[f'{steam_audio_lib_path}/ios'])
 
 if env["target"] in ["editor", "template_debug"]:
+    sources += Glob("src/editor/*.cpp")
     doc_data = env.GodotCPPDocData("src/gen/doc_data.gen.cpp", source=Glob("doc_classes/*.xml"))
     sources.append(doc_data)
 

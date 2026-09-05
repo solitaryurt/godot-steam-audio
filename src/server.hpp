@@ -24,7 +24,6 @@ private:
 	std::atomic<bool> is_global_state_init;
 	std::atomic<bool> is_refl_thread_processing;
 	std::atomic<bool> is_running;
-	std::atomic<bool> local_states_have_changed;
 	std::mutex init_mux;
 	std::mutex refl_mux;
 	std::mutex tick_mux;
@@ -34,7 +33,15 @@ private:
 	std::vector<IPLStaticMesh> static_meshes_to_add;
 	std::vector<IPLInstancedMesh> dynamic_meshes_to_add;
 	std::unordered_map<IPLInstancedMesh, IPLMatrix4x4> pending_transforms;
-	std::vector<IPLProbeBatch> probe_batches;
+	struct ProbeBatchEntry {
+		IPLProbeBatch batch;
+		bool has_pathing;
+		bool has_reflections;
+		std::vector<IPLSphere> probes;
+	};
+	std::vector<ProbeBatchEntry> probe_batches;
+	IPLSimulator visibility_sim = nullptr;
+	IPLSource visibility_source = nullptr;
 
 	// TODO: allow for multiple
 	SteamAudioListener *listener = nullptr;
@@ -44,6 +51,9 @@ private:
 	void run_refl_sim();
 	void wait_for_refl_idle();
 	void apply_pending_scene_ops();
+	bool is_probe_visible(IPLVector3 point, IPLVector3 probe);
+	bool has_visible_probes(const ProbeBatchEntry &entry, IPLVector3 point);
+	bool can_use_baked_reverb(IPLVector3 point);
 	Ref<Thread> refl_thread;
 
 protected:
@@ -59,14 +69,13 @@ public:
 	void add_listener(SteamAudioListener *listener);
 	void add_local_state(LocalSteamAudioState *ls);
 	void remove_local_state(LocalSteamAudioState *ls);
-	void add_source(IPLSource src);
-	void remove_source(IPLSource src);
 	void add_static_mesh(IPLStaticMesh mesh);
 	void remove_static_mesh(IPLStaticMesh mesh);
 	void add_dynamic_mesh(IPLInstancedMesh mesh);
 	void remove_dynamic_mesh(IPLInstancedMesh mesh);
 	void update_dynamic_mesh_transform(IPLInstancedMesh mesh, IPLMatrix4x4 transform);
-	IPLProbeBatch add_probe_batch(const uint8_t *data, size_t size);
+	IPLProbeBatch add_probe_batch(const uint8_t *data, size_t size, bool has_pathing, bool has_reflections,
+			const std::vector<IPLSphere> &probes);
 	void remove_probe_batch(IPLProbeBatch batch);
 
 	void tick();

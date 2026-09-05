@@ -136,7 +136,7 @@ int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int
 		}
 
 		IPLAmbisonicsDecodeEffectParams dec_params{};
-		dec_params.orientation = gs->listener_coords;
+		dec_params.orientation = ls->listener_coords;
 		dec_params.order = ls->cfg.ambisonics_order;
 		dec_params.hrtf = gs->hrtf;
 		dec_params.binaural = IPL_TRUE;
@@ -167,6 +167,13 @@ int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int
 		gs->refl_ir_lock.lock();
 		if (ls->refl_outputs.ir != nullptr && ls->cfg.is_reflection_on) {
 			iplAudioBufferDownmix(gs->ctx, &ls->bufs.in, &ls->bufs.mono);
+			// Listener-centric baked reverb has no source-distance falloff.
+			// Godot attenuates the final mix when Steam Audio attenuation is off.
+			if (ls->refl_outputs_baked && ls->cfg.is_dist_attn_on) {
+				for (int i = 0; i < chunk; i++) {
+					ls->bufs.mono.data[0][i] *= ls->direct_outputs.distanceAttenuation;
+				}
+			}
 			ls->refl_outputs.numChannels = ambisonic_channels_from(ls->cfg.ambisonics_order);
 			ls->refl_outputs.type = IPL_REFLECTIONEFFECTTYPE_CONVOLUTION;
 			ls->refl_outputs.irSize = int(SteamAudioConfig::max_refl_duration * float(gs->audio_cfg.samplingRate));
@@ -181,10 +188,9 @@ int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int
 		}
 		if (ls->cfg.is_pathing_on && ls->fx.path && ls->path_outputs.shCoeffs) {
 			IPLPathEffectParams path_params = ls->path_outputs;
-			path_params.order = ls->cfg.pathing_order;
 			path_params.binaural = IPL_TRUE;
 			path_params.hrtf = gs->hrtf;
-			path_params.listener = gs->listener_coords;
+			path_params.listener = ls->listener_coords;
 			iplAudioBufferDownmix(gs->ctx, &ls->bufs.in, &ls->bufs.mono);
 			iplPathEffectApply(ls->fx.path, &path_params, &ls->bufs.mono, &ls->bufs.path_out);
 			float mix = ls->cfg.pathing_mix_level;

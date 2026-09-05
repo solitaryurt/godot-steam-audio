@@ -11,6 +11,11 @@
 #include "server.hpp"
 #include "stream.hpp"
 
+#ifdef DEBUG_ENABLED
+#include "editor/steam_audio_editor_plugin.hpp"
+#include <godot_cpp/classes/editor_plugin.hpp>
+#endif
+
 #include <gdextension_interface.h>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
@@ -21,6 +26,16 @@ using namespace godot;
 SteamAudioServer *srv;
 
 void init_ext(ModuleInitializationLevel p_level) {
+#ifdef DEBUG_ENABLED
+	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+		GDREGISTER_INTERNAL_CLASS(SteamAudioProbeBakePanel);
+		GDREGISTER_INTERNAL_CLASS(SteamAudioProbeVolumeInspectorPlugin);
+		GDREGISTER_INTERNAL_CLASS(SteamAudioProbeVolumeGizmoPlugin);
+		GDREGISTER_INTERNAL_CLASS(SteamAudioEditorPlugin);
+		EditorPlugins::add_by_type<SteamAudioEditorPlugin>();
+		return;
+	}
+#endif
 	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE && p_level != MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		return;
 	}

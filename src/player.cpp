@@ -33,6 +33,8 @@ void SteamAudioPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_occlusion_on", "p_occlusion_on"), &SteamAudioPlayer::set_occlusion_on);
 	ClassDB::bind_method(D_METHOD("is_reflection_on"), &SteamAudioPlayer::is_reflection_on);
 	ClassDB::bind_method(D_METHOD("set_reflection_on", "p_reflection_on"), &SteamAudioPlayer::set_reflection_on);
+	ClassDB::bind_method(D_METHOD("is_baked_reverb_on"), &SteamAudioPlayer::is_baked_reverb_on);
+	ClassDB::bind_method(D_METHOD("set_baked_reverb_on", "p_baked_reverb_on"), &SteamAudioPlayer::set_baked_reverb_on);
 	ClassDB::bind_method(D_METHOD("is_directivity_on"), &SteamAudioPlayer::is_directivity_on);
 	ClassDB::bind_method(D_METHOD("set_directivity_on", "p_directivity_on"), &SteamAudioPlayer::set_directivity_on);
 	ClassDB::bind_method(D_METHOD("get_dipole_weight"), &SteamAudioPlayer::get_dipole_weight);
@@ -76,6 +78,7 @@ void SteamAudioPlayer::_bind_methods() {
 
 	ADD_GROUP("Reflection", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reflection"), "set_reflection_on", "is_reflection_on");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "baked_reverb"), "set_baked_reverb_on", "is_baked_reverb_on");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "max_reflection_distance", PROPERTY_HINT_RANGE, "0.0,20000.0,0.1"), "set_max_reflection_distance", "get_max_reflection_distance");
 
 	ADD_GROUP("Directivity", "");
@@ -218,7 +221,7 @@ void SteamAudioPlayer::init_local_state() {
 			gs->ctx, gs->audio_cfg);
 
 	IPLPathEffectSettings path_cfg{};
-	path_cfg.maxOrder = SteamAudioConfig::max_ambisonics_order;
+	path_cfg.maxOrder = gs->sim_cfg.maxOrder;
 	path_cfg.spatialize = IPL_TRUE;
 	path_cfg.speakerLayout.type = IPL_SPEAKERLAYOUTTYPE_STEREO;
 	path_cfg.hrtf = gs->hrtf;
@@ -248,7 +251,6 @@ void SteamAudioPlayer::register_with_simulator() {
 	if (srv == nullptr) {
 		return;
 	}
-	srv->add_source(local_state.src.src);
 	srv->add_local_state(&local_state);
 	in_simulator.store(true);
 }
@@ -263,7 +265,6 @@ void SteamAudioPlayer::unregister_from_simulator() {
 		return;
 	}
 	srv->remove_local_state(&local_state);
-	srv->remove_source(local_state.src.src);
 	in_simulator.store(false);
 }
 
@@ -446,6 +447,8 @@ void SteamAudioPlayer::set_air_absorption_model_type(IPLAirAbsorptionModelType p
 
 bool SteamAudioPlayer::is_reflection_on() { return cfg.is_reflection_on; }
 void SteamAudioPlayer::set_reflection_on(bool p_reflection_on) { cfg.is_reflection_on = p_reflection_on; cfg_dirty.store(true); }
+bool SteamAudioPlayer::is_baked_reverb_on() { return cfg.baked_reverb; }
+void SteamAudioPlayer::set_baked_reverb_on(bool p_baked_reverb_on) { cfg.baked_reverb = p_baked_reverb_on; cfg_dirty.store(true); }
 bool SteamAudioPlayer::is_occlusion_on() { return cfg.is_occlusion_on; }
 void SteamAudioPlayer::set_occlusion_on(bool p_occlusion_on) { cfg.is_occlusion_on = p_occlusion_on; cfg_dirty.store(true); }
 

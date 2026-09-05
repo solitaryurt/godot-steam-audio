@@ -72,6 +72,7 @@ struct SteamAudioSourceConfig {
 	float vis_radius;
 	float vis_threshold;
 	float vis_range;
+	bool baked_reverb = false;
 };
 
 struct SteamAudioEffects {
@@ -99,7 +100,14 @@ struct LocalSteamAudioState {
 	Vector3 dir_to_listener;
 	IPLDirectEffectParams direct_outputs{ {} };
 	IPLReflectionEffectParams refl_outputs{ {} };
+	bool refl_simulation_pending = false;
+	bool refl_simulation_baked = false;
+	bool refl_outputs_baked = false;
+	IPLCoordinateSpace3 listener_coords{};
 	IPLPathEffectParams path_outputs{ {} };
+	float path_sh_coeffs[36]{};
+	// Order submitted to the last pathing run; -1 means no valid pending output.
+	int path_simulation_order = -1;
 	LocalSteamAudioBuffers bufs;
 	SteamAudioEffects fx;
 	SteamAudioSourceConfig cfg;

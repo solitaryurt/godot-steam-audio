@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="SteamAudioProbeVolume" inherits="Node3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
 	<brief_description>
-		Volume used to generate Steam Audio probes and bake pathing data.
+		Volume used to generate Steam Audio probes and bake pathing and reflections.
 	</brief_description>
 	<description>
-		Place this node so its [member size] box covers the walkable area. Call [method generate_probes] to sample probe positions, then [method bake_pathing] to compute shortest paths between probes. Save the resulting [member baked_data] with the scene. At runtime the batch is loaded into [SteamAudioServer] for pathing simulation.
+		Place this node so its [member size] box covers the listener area. Generate probes, then bake pathing and/or listener-centric convolution reflections. At runtime the batch is loaded into [SteamAudioServer].
+		Older batches without stored probe positions and radii must be explicitly regenerated before baking. The Steam Audio SDK cannot read these spheres back from a loaded batch; current volume settings are not used to guess them. Removing the node from the tree cancels and discards its pending bake, waiting for the SDK worker to stop.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -12,13 +13,31 @@
 		<method name="generate_probes">
 			<return type="void" />
 			<description>
-				Generate probes in this volume (centroid or uniform-floor) and store them in [member baked_data]. Does not bake pathing.
+				Generate probes in this volume (centroid or uniform-floor) and store them in [member baked_data]. Does not bake pathing. In the editor, also writes [member baked_data] to [member save_path].
 			</description>
 		</method>
 		<method name="bake_pathing">
 			<return type="void" />
 			<description>
-				Bake pathing (probe-to-probe visibility) into [member baked_data]. Calls [method generate_probes] first if there is no batch yet. This can take a while.
+				Bake pathing (probe-to-probe visibility) into [member baked_data]. Calls [method generate_probes] first if there is no batch yet. In the editor this runs in the background (see [method cancel_bake]); at runtime it blocks until finished.
+			</description>
+		</method>
+		<method name="bake_reflections">
+			<return type="void" />
+			<description>
+				Bake listener-centric convolution reverb at every probe. Players must enable [member SteamAudioPlayer.baked_reverb] to use available baked data; source reflections remain real-time by default. In the editor this runs in the background.
+			</description>
+		</method>
+		<method name="cancel_bake">
+			<return type="void" />
+			<description>
+				Request cancellation of an editor pathing or reflection bake. Reflection cancellation is cooperative and delivered at an SDK progress callback. Pathing finishes in the background and discards its result because native cancellation is unsafe in Steam Audio 4.5.3. [method is_baking] remains true until the worker exits and cleanup finishes; cancelled results are not applied or saved. Removing the node or closing the scene may wait for this worker.
+			</description>
+		</method>
+		<method name="save_baked_data">
+			<return type="int" enum="Error" />
+			<description>
+				Write [member baked_data] to [member save_path] as its own resource file. If [member save_path] is empty, a path is chosen next to the scene, or under [code]res://steam_audio_bakes/[/code] if the scene has not been saved yet.
 			</description>
 		</method>
 		<method name="get_probe_count">
@@ -27,10 +46,37 @@
 				Number of probes in [member baked_data], or 0 if none.
 			</description>
 		</method>
+		<method name="get_probe_positions">
+			<return type="PackedVector3Array" />
+			<description>
+				World-space probe positions used for viewport gizmos.
+			</description>
+		</method>
+		<method name="is_baking">
+			<return type="bool" />
+			<description>
+				True while a bake is running or awaiting finalization, including cancellation and resource-change callbacks. Becomes false before [signal bake_finished] is emitted.
+			</description>
+		</method>
+		<method name="is_baking_reflections">
+			<return type="bool" />
+			<description>
+				True when the active editor bake is a reflection bake.
+			</description>
+		</method>
+		<method name="get_bake_progress">
+			<return type="float" />
+			<description>
+				Bake progress from 0 to 1 while [method is_baking] is true.
+			</description>
+		</method>
 	</methods>
 	<members>
 		<member name="baked_data" type="SteamAudioProbeBatchData" setter="set_baked_data" getter="get_baked_data">
-			Serialized probe batch, including pathing data after a bake.
+			Serialized probe batch, including pathing data after a bake. Stored as an external resource at [member save_path]. Reassignment is rejected while [method is_baking] is true. A bake snapshots its input metadata; direct edits to resource properties during a successful bake are replaced by the completed result.
+		</member>
+		<member name="save_path" type="String" setter="set_save_path" getter="get_save_path" default="&quot;&quot;">
+			Standalone .res or .tres file to write [member baked_data] to, not an embedded resource path containing [code]::[/code]. Filled automatically after the first successful save if empty. A failed save leaves the resource's path binding unchanged.
 		</member>
 		<member name="generation" type="int" setter="set_generation" getter="get_generation" enum="SteamAudioProbeVolume.GenerationType" default="1">
 			Centroid places one probe at the volume center. Uniform Floor places probes on a grid above solid geometry.
@@ -44,7 +90,49 @@
 		<member name="height" type="float" setter="set_height" getter="get_height" default="1.5">
 			Height above the floor for uniform-floor probes, in meters.
 		</member>
+		<member name="reflection_bounces" type="int" setter="set_reflection_bounces" getter="get_reflection_bounces" default="8">
+			Number of reflected ray bounces simulated at each probe.
+		</member>
+		<member name="reflection_diffuse_samples" type="int" setter="set_reflection_diffuse_samples" getter="get_reflection_diffuse_samples" default="32">
+			Number of diffuse reflection directions considered during baking.
+		</member>
+		<member name="reflection_irradiance_min_distance" type="float" setter="set_reflection_irradiance_min_distance" getter="get_reflection_irradiance_min_distance" default="1.0">
+			Minimum source-to-surface distance used for reflected energy calculations.
+		</member>
+		<member name="reflection_order" type="int" setter="set_reflection_order" getter="get_reflection_order" default="1">
+			Ambisonic order of the baked impulse responses.
+		</member>
+		<member name="reflection_rays" type="int" setter="set_reflection_rays" getter="get_reflection_rays" default="1024">
+			Number of rays traced at each probe.
+		</member>
+		<member name="reflection_saved_duration" type="float" setter="set_reflection_saved_duration" getter="get_reflection_saved_duration" default="1.0">
+			Length in seconds of each impulse response stored in the bake.
+		</member>
+		<member name="reflection_simulated_duration" type="float" setter="set_reflection_simulated_duration" getter="get_reflection_simulated_duration" default="1.0">
+			Length in seconds simulated when generating each impulse response.
+		</member>
+		<member name="reflection_threads" type="int" setter="set_reflection_threads" getter="get_reflection_threads" default="4">
+			Number of worker threads used by the reflection baker.
+		</member>
 	</members>
+	<signals>
+		<signal name="probes_generated">
+			<description>
+				Emitted after [method generate_probes] succeeds.
+			</description>
+		</signal>
+		<signal name="bake_started">
+			<description>
+				Emitted when an editor pathing or reflection bake begins.
+			</description>
+		</signal>
+		<signal name="bake_finished">
+			<param index="0" name="success" type="bool" />
+			<description>
+				Emitted after an editor pathing or reflection bake completes, is cancelled, or fails, and its job resources have been released. Not emitted when a pending bake is discarded because the node leaves the tree.
+			</description>
+		</signal>
+	</signals>
 	<constants>
 		<constant name="GENERATION_CENTROID" value="0" enum="GenerationType">
 			One probe at the center of the volume.
