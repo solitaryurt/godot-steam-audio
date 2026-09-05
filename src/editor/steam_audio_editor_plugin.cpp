@@ -1,7 +1,6 @@
 #include "steam_audio_editor_plugin.hpp"
 
 #include "godot_cpp/classes/editor_node3d_gizmo.hpp"
-#include "godot_cpp/classes/h_box_container.hpp"
 #include "godot_cpp/classes/material.hpp"
 #include "godot_cpp/classes/standard_material3d.hpp"
 #include "godot_cpp/classes/text_server.hpp"
@@ -31,36 +30,33 @@ void SteamAudioProbeBakePanel::setup(SteamAudioProbeVolume *p_volume) {
 	header->set_text("Steam Audio Baking");
 	add_child(header);
 
-	HBoxContainer *row = memnew(HBoxContainer);
-	add_child(row);
-
 	generate_btn = memnew(Button);
 	generate_btn->set_text("Generate Probes");
 	generate_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	generate_btn->set_tooltip_text("Place probes in this volume. Saved to its own .res file.");
 	generate_btn->connect("pressed", Callable(this, "_on_generate"));
-	row->add_child(generate_btn);
+	add_child(generate_btn);
 
 	pathing_btn = memnew(Button);
 	pathing_btn->set_text("Bake Pathing");
 	pathing_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	pathing_btn->set_tooltip_text("Bake probe-to-probe paths.");
 	pathing_btn->connect("pressed", Callable(this, "_on_bake_pathing"));
-	row->add_child(pathing_btn);
+	add_child(pathing_btn);
 
 	reflections_btn = memnew(Button);
 	reflections_btn->set_text("Bake Reflections");
 	reflections_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	reflections_btn->set_tooltip_text("Bake listener-centric convolution reverb at each probe.");
 	reflections_btn->connect("pressed", Callable(this, "_on_bake_reflections"));
-	row->add_child(reflections_btn);
+	add_child(reflections_btn);
 
 	cancel_btn = memnew(Button);
 	cancel_btn->set_text("Cancel");
 	cancel_btn->set_tooltip_text("Discard the bake result. Pathing must finish in the background because native cancellation is unsafe in Steam Audio 4.5.3.");
 	cancel_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	cancel_btn->connect("pressed", Callable(this, "_on_cancel"));
-	row->add_child(cancel_btn);
+	add_child(cancel_btn);
 
 	progress = memnew(ProgressBar);
 	progress->set_min(0);
@@ -252,8 +248,14 @@ void SteamAudioProbeVolumeGizmoPlugin::_redraw(const Ref<EditorNode3DGizmo> &p_g
 		return;
 	}
 
+	const Transform3D global_transform = vol->get_global_transform();
+	const Transform3D world_to_local = global_transform.affine_inverse();
 	PackedVector3Array box;
-	add_box_lines(box, vol->get_size() * 0.5f);
+	// Match volume_matrix(): generation bounds are axis-aligned in world space.
+	add_box_lines(box, global_transform.basis.get_scale() * vol->get_size() * 0.5f);
+	for (int i = 0; i < box.size(); i++) {
+		box.set(i, world_to_local.xform(global_transform.origin + box[i]));
+	}
 	Ref<Material> volume_mat = get_material("volume", p_gizmo);
 	p_gizmo->add_lines(box, volume_mat);
 	p_gizmo->add_collision_segments(box);
@@ -265,7 +267,7 @@ void SteamAudioProbeVolumeGizmoPlugin::_redraw(const Ref<EditorNode3DGizmo> &p_g
 	PackedVector3Array probe_lines;
 	const float r = 0.12f;
 	for (int i = 0; i < positions.size(); i++) {
-		add_octahedron_lines(probe_lines, vol->to_local(positions[i]), r);
+		add_octahedron_lines(probe_lines, world_to_local.xform(positions[i]), r);
 	}
 	Ref<SteamAudioProbeBatchData> data = vol->get_baked_data();
 	const bool baked = data.is_valid() && (data->is_pathing_baked() || data->are_reflections_baked());

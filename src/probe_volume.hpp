@@ -7,7 +7,6 @@
 #include "phonon.h"
 #include "probe_core.hpp"
 #include <atomic>
-#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -119,8 +118,8 @@ private:
 	std::string bake_error;
 	BakeKind bake_kind = BAKE_PATHING;
 	BakeSettings bake_settings{};
-	bool bake_lock_held = false;
-	static std::mutex global_bake_mux;
+	bool owns_global_bake = false;
+	static std::atomic<bool> global_bake_busy;
 
 	IPLMatrix4x4 volume_matrix() const;
 	void ready_internal();

@@ -77,12 +77,13 @@
 		</member>
 		<member name="save_path" type="String" setter="set_save_path" getter="get_save_path" default="&quot;&quot;">
 			Standalone .res or .tres file to write [member baked_data] to, not an embedded resource path containing [code]::[/code]. Filled automatically after the first successful save if empty. A failed save leaves the resource's path binding unchanged.
+			New automatic paths distinguish the scene and node names and skip existing files and directories. Explicit paths and existing standalone resource paths retain their binding and are overwritten on save.
 		</member>
 		<member name="generation" type="int" setter="set_generation" getter="get_generation" enum="SteamAudioProbeVolume.GenerationType" default="1">
 			Centroid places one probe at the volume center. Uniform Floor places probes on a grid above solid geometry.
 		</member>
 		<member name="size" type="Vector3" setter="set_size" getter="get_size" default="Vector3(10, 4, 10)">
-			Axis-aligned size of the generation volume, in meters, centered on this node.
+			World-axis-aligned size of the generation volume, in meters, centered on this node and multiplied by its global scale. Rotation does not rotate the generation region. Generated probe positions stay fixed in world space until regenerated.
 		</member>
 		<member name="spacing" type="float" setter="set_spacing" getter="get_spacing" default="2.0">
 			Horizontal spacing between uniform-floor probes, in meters.

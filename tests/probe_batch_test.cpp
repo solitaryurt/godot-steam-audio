@@ -17,6 +17,38 @@ static void expect(bool cond, const char *msg) {
 int main() {
 	std::string err;
 
+	// Exercise the exact eligibility query used by the runtime server without Godot.
+	const IPLVector3 point{ 0.f, 0.f, 0.f };
+	auto visible_on_right = [](IPLVector3, IPLVector3 probe) { return probe.x >= 0.f; };
+	std::vector<IPLSphere> probes{ { { 2.f, 0.f, 0.f }, 2.f } };
+	auto neighborhood = probe_core_query_neighborhood(probes, point, visible_on_right);
+	expect(neighborhood.has_visible_probe && neighborhood.has_guaranteed_visible_probe,
+			"visible boundary probe establishes runtime eligibility");
+	probes[0].radius = 1.99f;
+	neighborhood = probe_core_query_neighborhood(probes, point, visible_on_right);
+	expect(!neighborhood.has_visible_probe && !neighborhood.has_guaranteed_visible_probe,
+			"outside probe does not establish runtime eligibility");
+	probes.assign(9, { { 1.f, 0.f, 0.f }, 2.f });
+	neighborhood = probe_core_query_neighborhood(probes, point, visible_on_right);
+	expect(neighborhood.has_guaranteed_visible_probe, "nine visible influences remain eligible");
+	for (int i = 0; i < 7; ++i) {
+		probes[size_t(i)].center.x = -1.f;
+	}
+	neighborhood = probe_core_query_neighborhood(probes, point, visible_on_right);
+	expect(neighborhood.has_guaranteed_visible_probe,
+			"seven hidden influences cannot fill the SDK's eight neighbors");
+	probes[7].center.x = -1.f;
+	neighborhood = probe_core_query_neighborhood(probes, point, visible_on_right);
+	expect(neighborhood.has_visible_probe && !neighborhood.has_guaranteed_visible_probe,
+			"eight hidden influences keep ambiguous neighborhoods ineligible");
+	probes[8].center.x = -1.f;
+	neighborhood = probe_core_query_neighborhood(probes, point, visible_on_right);
+	expect(!neighborhood.has_visible_probe && !neighborhood.has_guaranteed_visible_probe,
+			"fully occluded batches cannot contribute or dilute reflection weights");
+	neighborhood = probe_core_query_neighborhood({}, point, visible_on_right);
+	expect(!neighborhood.has_visible_probe && !neighborhood.has_guaranteed_visible_probe,
+			"empty neighborhoods do not establish eligibility");
+
 	IPLContext ctx = probe_core_create_context(&err);
 	expect(ctx != nullptr, "create IPL context");
 	if (ctx == nullptr) {

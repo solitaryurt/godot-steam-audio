@@ -11,13 +11,14 @@
 #endif
 #include "godot_cpp/classes/dir_access.hpp"
 #include "godot_cpp/classes/engine.hpp"
+#include "godot_cpp/classes/file_access.hpp"
 #include "godot_cpp/classes/mesh_instance3d.hpp"
 #include "godot_cpp/classes/resource_saver.hpp"
 #include "godot_cpp/classes/scene_tree.hpp"
 #include "server.hpp"
 #include "steam_audio.hpp"
 
-std::mutex SteamAudioProbeVolume::global_bake_mux;
+std::atomic<bool> SteamAudioProbeVolume::global_bake_busy{ false };
 
 void SteamAudioProbeBatchData::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_bytes"), &SteamAudioProbeBatchData::get_bytes);
@@ -302,9 +303,16 @@ String SteamAudioProbeVolume::resolve_save_path() {
 		base = scene_path.get_base_dir();
 		String node_key = owner ? String(owner->get_path_to(this)) : String(get_name());
 		node_key = node_key.uri_encode().validate_filename();
-		stem = scene_path.get_file().get_basename() + "_" + node_key;
+		String scene_key = scene_path.get_file().uri_encode().validate_filename();
+		// Length-prefix the scene component: underscores can occur in either key.
+		stem = String::num_int64(scene_key.length()) + "_" + scene_key + "_" + node_key;
 	}
-	return base.path_join(stem + ".res");
+	String path = base.path_join(stem + ".res");
+	// Only new automatic paths get uniquified; explicit/resource paths keep their binding.
+	for (uint64_t suffix = 1; FileAccess::file_exists(path) || DirAccess::dir_exists_absolute(path); ++suffix) {
+		path = base.path_join(stem + "_" + String::num_uint64(suffix) + ".res");
+	}
+	return path;
 }
 
 Error SteamAudioProbeVolume::save_baked_data() {
@@ -490,11 +498,12 @@ void SteamAudioProbeVolume::start_bake(BakeKind p_kind) {
 		SteamAudio::log(SteamAudio::log_error, "bake: no probes to bake");
 		return;
 	}
-	if (!global_bake_mux.try_lock()) {
+	// Ownership spans editor frames, so it must not be a thread-owned mutex.
+	if (global_bake_busy.exchange(true)) {
 		SteamAudio::log(SteamAudio::log_warn, "Another Steam Audio bake is already running");
 		return;
 	}
-	bake_lock_held = true;
+	owns_global_bake = true;
 	bake_kind = p_kind;
 	// Resource properties can be edited directly, even when reassignment is rejected.
 	// Preserve the metadata belonging to the serialized batch we actually bake.
@@ -637,9 +646,9 @@ void SteamAudioProbeVolume::release_bake_job() {
 	bake_bytes.clear();
 	bake_data.unref();
 	bake_count = 0;
-	if (bake_lock_held) {
-		global_bake_mux.unlock();
-		bake_lock_held = false;
+	if (owns_global_bake) {
+		owns_global_bake = false;
+		global_bake_busy.store(false);
 	}
 }
 
@@ -774,7 +783,14 @@ void SteamAudioProbeVolume::ready_internal() {
 void SteamAudioProbeVolume::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE:
+			set_notify_transform(Engine::get_singleton()->is_editor_hint());
 			ready_internal();
+			refresh_editor_visuals();
+			break;
+		case NOTIFICATION_TRANSFORM_CHANGED:
+			if (Engine::get_singleton()->is_editor_hint() && is_inside_tree()) {
+				update_gizmos();
+			}
 			break;
 		case NOTIFICATION_EXIT_TREE:
 			set_process_internal(false);

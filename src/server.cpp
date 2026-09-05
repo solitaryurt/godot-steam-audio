@@ -66,24 +66,9 @@ bool SteamAudioServer::is_probe_visible(IPLVector3 point, IPLVector3 probe) {
 }
 
 bool SteamAudioServer::has_visible_probes(const ProbeBatchEntry &entry, IPLVector3 point) {
-	int influencing = 0;
-	bool visible = false;
-	for (const auto &probe : entry.probes) {
-		float dx = probe.center.x - point.x;
-		float dy = probe.center.y - point.y;
-		float dz = probe.center.z - point.z;
-		float distance_squared = dx * dx + dy * dy + dz * dz;
-		if (distance_squared <= probe.radius * probe.radius) {
-			// The SDK chooses eight BVH neighbors BEFORE occlusion, not the
-			// nearest eight visible probes. Its traversal is not a public API.
-			if (++influencing > 8) {
-				return false;
-			}
-			// Boundary probes have zero interpolation weight, even if visible.
-			visible = visible || (distance_squared < probe.radius * probe.radius && is_probe_visible(point, probe.center));
-		}
-	}
-	return visible;
+	return probe_core_query_neighborhood(entry.probes, point,
+			[this](IPLVector3 from, IPLVector3 to) { return is_probe_visible(from, to); })
+			.has_guaranteed_visible_probe;
 }
 
 bool SteamAudioServer::can_use_baked_reverb(IPLVector3 point) {
@@ -93,16 +78,14 @@ bool SteamAudioServer::can_use_baked_reverb(IPLVector3 point) {
 		if (entry.probes.empty()) {
 			return false;
 		}
-		for (const auto &probe : entry.probes) {
-			float dx = probe.center.x - point.x;
-			float dy = probe.center.y - point.y;
-			float dz = probe.center.z - point.z;
-			if (dx * dx + dy * dy + dz * dz <= probe.radius * probe.radius && !entry.has_reflections) {
-				// Missing reflection layers still dilute the normalized weights.
-				return false;
-			}
+		auto neighborhood = probe_core_query_neighborhood(entry.probes, point,
+				[this](IPLVector3 from, IPLVector3 to) { return is_probe_visible(from, to); });
+		if (!entry.has_reflections && neighborhood.has_visible_probe) {
+			// Only visible probes survive SDK occlusion filtering and can dilute
+			// the normalized reflection weights with a missing layer.
+			return false;
 		}
-		visible = has_visible_probes(entry, point) || visible;
+		visible = (entry.has_reflections && neighborhood.has_guaranteed_visible_probe) || visible;
 	}
 	return visible;
 }

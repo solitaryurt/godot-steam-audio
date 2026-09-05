@@ -31,7 +31,8 @@ struct Runtime {
 	IPLAudioBuffer in{ 1, 256, in_channels };
 	IPLAudioBuffer out{ 4, 256, out_channels };
 
-	Runtime(IPLContext ctx, IPLScene scene, IPLProbeBatch batch) {
+	Runtime(IPLContext ctx, IPLScene scene, IPLProbeBatch batch,
+			IPLVector3 listener = { -2, 1.75f, 0 }) {
 		IPLSimulationSettings settings{};
 		settings.flags = static_cast<IPLSimulationFlags>(IPL_SIMULATIONFLAGS_DIRECT |
 				IPL_SIMULATIONFLAGS_REFLECTIONS | IPL_SIMULATIONFLAGS_PATHING);
@@ -60,7 +61,7 @@ struct Runtime {
 				"create reflection effect");
 
 		IPLSimulationSharedInputs shared{};
-		shared.listener.origin = { -2, 1.75f, 0 };
+		shared.listener.origin = listener;
 		shared.listener.ahead = { 0, 0, -1 };
 		shared.listener.up = { 0, 1, 0 };
 		shared.listener.right = { 1, 0, 0 };
@@ -204,6 +205,61 @@ int main() {
 		expect_energy(runtime.render(true), !first_baked, "new input renders only the destination mode");
 	}
 
+	{
+		Runtime runtime(ctx, empty_scene, batch, { 8, 1.75f, 0 });
+		runtime.run(true);
+		expect_energy(runtime.render(true), true, "SDK boundary probe has nonzero reflection weight");
+	}
+
+	IPLScene wall_scene = probe_core_create_empty_scene(ctx, &error);
+	require(probe_core_add_box(wall_scene, 0, 2, 0, 0.25f, 4, 4, &error), "create occluding wall");
+	IPLProbeBatch hidden_batch = nullptr;
+	require(iplProbeBatchCreate(ctx, &hidden_batch) == IPL_STATUS_SUCCESS, "create hidden unbaked batch");
+	iplProbeBatchAddProbe(hidden_batch, { { 2, 1.75f, 0 }, 10 });
+	iplProbeBatchCommit(hidden_batch);
+	double baseline;
+	{
+		Runtime runtime(ctx, wall_scene, batch, { -1, 1.75f, 0 });
+		runtime.run(true);
+		baseline = runtime.render(true);
+		expect_energy(baseline, true, "visible baked probe beside wall renders reflections");
+	}
+	{
+		Runtime runtime(ctx, wall_scene, batch, { -1, 1.75f, 0 });
+		iplSimulatorAddProbeBatch(runtime.sim, hidden_batch);
+		iplSimulatorCommit(runtime.sim);
+		runtime.run(true);
+		double energy = runtime.render(true);
+		expect_energy(energy, true, "hidden unbaked batch preserves reflections");
+		require(std::abs(energy - baseline) < baseline * 0.001,
+				"hidden unbaked probes do not dilute reflection weights");
+	}
+	{
+		Runtime runtime(ctx, empty_scene, batch, { -1, 1.75f, 0 });
+		iplSimulatorAddProbeBatch(runtime.sim, hidden_batch);
+		iplSimulatorCommit(runtime.sim);
+		runtime.run(true);
+		double energy = runtime.render(true);
+		require(energy > 1e-8 && energy < baseline * 0.9,
+				"visible unbaked control must dilute reflection weights");
+	}
+	iplProbeBatchRelease(&hidden_batch);
+	probe_core_destroy_scene(&wall_scene);
+
+	// More than eight visible influences are truncated, not rejected, by the SDK.
+	iplProbeBatchRelease(&batch);
+	require(iplProbeBatchCreate(ctx, &batch) == IPL_STATUS_SUCCESS, "create dense probe batch");
+	for (int i = 0; i < 9; ++i) {
+		iplProbeBatchAddProbe(batch, { { -2, 1.75f, 0 }, 10 });
+	}
+	iplProbeBatchCommit(batch);
+	require(probe_core_bake_reflections(ctx, bake_scene, batch,
+			256, 32, 4, 0.1f, 0.1f, 1, 1, 1, 1, &error), "bake nine visible probes");
+	{
+		Runtime runtime(ctx, empty_scene, batch);
+		runtime.run(true);
+		expect_energy(runtime.render(true), true, "nine visible SDK probes render baked reflections");
+	}
 	iplProbeBatchRelease(&batch);
 	probe_core_destroy_scene(&bake_scene);
 	probe_core_destroy_scene(&empty_scene);

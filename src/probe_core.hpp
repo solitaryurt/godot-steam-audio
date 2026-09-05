@@ -10,6 +10,34 @@
 // Godot-free helpers around IPL probe batches. Used by SteamAudioProbeVolume
 // and by tests/probe_batch_test.cpp.
 
+struct ProbeCoreNeighborhood {
+	bool has_visible_probe;
+	bool has_guaranteed_visible_probe;
+};
+
+template <typename VisibilityTest>
+ProbeCoreNeighborhood probe_core_query_neighborhood(const std::vector<IPLSphere> &probes,
+		IPLVector3 point, VisibilityTest is_visible) {
+	int visible = 0;
+	int occluded = 0;
+	for (const auto &probe : probes) {
+		float dx = probe.center.x - point.x;
+		float dy = probe.center.y - point.y;
+		float dz = probe.center.z - point.z;
+		// SDK 4.5.3 includes the boundary and uses inverse-distance weights.
+		if (dx * dx + dy * dy + dz * dz <= probe.radius * probe.radius) {
+			if (is_visible(point, probe.center)) {
+				++visible;
+			} else {
+				++occluded;
+			}
+		}
+	}
+	// The SDK selects up to eight BVH neighbors before testing occlusion.
+	// Fewer than eight occluded influences cannot fill a hidden-only selection.
+	return { visible > 0, visible > 0 && occluded < 8 };
+}
+
 IPLContext probe_core_create_context(std::string *err = nullptr);
 void probe_core_destroy_context(IPLContext *ctx);
 
