@@ -15,13 +15,12 @@ static bool fail(std::string *err, const char *msg) {
 }
 
 IPLMatrix4x4 probe_core_volume_matrix(float ox, float oy, float oz, float sx, float sy, float sz) {
-	// SDK 4.5.3 probe generation reads column-major storage, despite the public
-	// matrix's row-major documentation. Its local box is [-0.5, 0.5]^3.
+	// SDK 4.8.1 uses the documented row-major layout. Its local box is [-0.5, 0.5]^3.
 	return IPLMatrix4x4{ {
-			{ sx, 0.f, 0.f, 0.f },
-			{ 0.f, sy, 0.f, 0.f },
-			{ 0.f, 0.f, sz, 0.f },
-			{ ox, oy, oz, 1.f },
+			{ sx, 0.f, 0.f, ox },
+			{ 0.f, sy, 0.f, oy },
+			{ 0.f, 0.f, sz, oz },
+			{ 0.f, 0.f, 0.f, 1.f },
 	} };
 }
 
@@ -262,6 +261,10 @@ bool probe_core_bake_pathing(IPLContext ctx, IPLScene scene, IPLProbeBatch batch
 	// job-local batch; leave other baked layers untouched.
 	iplProbeBatchRemoveData(batch, &id);
 	pathing_bake_cancelled.store(false);
+	// SDK 4.8.1's path worker pool calls the progress callback unconditionally.
+	if (!progress_cb) {
+		progress_cb = [](IPLfloat32, void *) {};
+	}
 	iplPathBakerBake(ctx, &params, progress_cb, progress_user);
 	// Pathing cancellation finishes the SDK bake, then discards its result.
 	// The caller must release this job-local batch without publishing it.

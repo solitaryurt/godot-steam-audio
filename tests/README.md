@@ -1,6 +1,6 @@
 # Standalone SDK Tests
 
-Run from the repository root with the installed Linux x64 Steam Audio SDK:
+Run from the repository root with the installed Linux x64 Steam Audio SDK 4.8.1:
 
 ```sh
 make -C tests -B check
@@ -8,12 +8,17 @@ make -C tests -B check
 
 `-B` rebuilds existing binaries, including any left over from sanitizer runs.
 
-- `probe_batch_test`: exact SDK 4.5.3 probe coordinates/radii, serialization, and runtime pathing/reflection output. Exercises the server's shared neighborhood query for boundary, dense, occluded, and ambiguous influences. Four independent simulators test both layers, either layer alone, and neither layer. A wall blocks direct sound; positive pathing requires finite, nonzero directional SH. Reflections render a unit impulse, checking silent priming, nonzero response/tail, and silence without the reflection layer.
+- `probe_batch_test`: exact probe coordinates/radii, serialization, and runtime pathing/reflection output. Geometry expectations originate from SDK 4.5.3 and are preserved with the documented row-major probe transforms used by 4.8.1. Path bakes without a caller-supplied progress callback exercise the fallback required by 4.8.1. Exercises the server's shared neighborhood query for boundary, dense, occluded, and ambiguous influences. Four independent simulators test both layers, either layer alone, and neither layer. A wall blocks direct sound; positive pathing requires finite, nonzero directional SH. Reflections render a unit impulse, checking silent priming, nonzero response/tail, and silence without the reflection layer.
 - `probe_bake_failure_test`: linker-wrapped no-output bakes must fail even when replacing an existing layer, while preserving the other layer. Successful bakes and batch operations still use the real SDK.
 - `probe_bake_cancel_test`: cancellation during real SDK fresh bakes and rebakes, for both bakers, from the callback thread and another thread synchronized with the callback. Pathing must finish its progress callbacks but return failure; a linker wrapper aborts if unsafe native path cancellation is invoked. The reflection cancel wrapper forwards to the real SDK, and the test verifies cancellation stops after the first probe. Cancelled batches are only released; a fresh batch must bake successfully afterward.
 - `reflection_transition_test`: public-SDK audio-value checks for the idle source-recreation/effect-reset sequence used in `server.cpp`. An empty real-time scene and baked reflective floor distinguish the modes without changing scene or transforms. Covers unread IRs in both transition directions, clearing accumulated baked energy, and clearing old input history before silent/new input reaches the destination mode. Also verifies reflection output at a probe boundary, with nine visible influences, and without dilution from an occluded unbaked batch. Checks finite output and energy bounds, not private SDK state or handle addresses. This mirrors the transition lifecycle; it does not exercise Godot's mixer locks or allocation-failure handling.
 
 All jobs within each process are serialized, matching the SDK's process-global baker state. Cancellation must go through the core wrappers, which remember requests even when the SDK resets its internal cancellation flag before returning. Never query, save, remove layers from, or rebake a cancelled batch.
+
+SDK 4.8.1's reflection lookup can use an unbaked probe's batch-local index in another
+batch's baked data. The transition test characterizes the same-index case, which
+preserves energy instead of the dilution seen in 4.5.3. This is not safe filtering
+of unbaked probes; the runtime still rejects visible mixed baked/unbaked neighborhoods.
 
 ## Godot Integration
 

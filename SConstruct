@@ -18,16 +18,9 @@ if not (os.path.isdir(steam_audio_lib_path) and os.listdir(steam_audio_lib_path)
     make install-steam-audio""")
     Exit(1)
 
-env.Append(CPPPATH=["src/"])
-
-# Prebuilt libphonon in lib/ is 4.5.x. The Unity plugin headers in this
-# tree are 4.8.0; compiling against those makes iplContextCreate reject
-# the library (minor 8 > 5) and every subsequent IPL call crash.
-if env.get("CC", "").lower() == "cl":
-    # Building with MSVC
-    env.AppendUnique(CCFLAGS=("/I",  "src/lib/steamaudio/include/"))
-else:
-    env.AppendUnique(CCFLAGS=("-isystem",  "src/lib/steamaudio/include/"))
+# Use the headers installed with the prebuilt SDK, not the Unity plugin headers.
+# CPPPATH also lets SCons track SDK header changes and rebuild dependent objects.
+env.Append(CPPPATH=["src/", "src/lib/steamaudio/include/"])
 
 sources = Glob("src/*.cpp")
 

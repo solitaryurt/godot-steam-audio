@@ -1,16 +1,20 @@
+STEAM_AUDIO_VERSION := 4.8.1
+
+.PHONY: download-steam-audio install-steam-audio
+
 test:
 	scons platform=linux arch=x86_64 target=template_debug test
 	./tests/probe_batch_test
 
-install-steam-audio:
-	curl -s https://api.github.com/repos/ValveSoftware/steam-audio/releases/latest \
-		| grep -E 'browser_download.*steamaudio_[0-9\.]+\.zip' \
-		| cut -d : -f 2,3 | tr -d \" | wget -O src/lib/steamaudio.zip -i -
-	unzip src/lib/steamaudio.zip -d src/lib/
+download-steam-audio:
+	curl -fL --retry 3 -o src/lib/steamaudio.zip https://github.com/ValveSoftware/steam-audio/releases/download/v$(STEAM_AUDIO_VERSION)/steamaudio_$(STEAM_AUDIO_VERSION).zip
+	unzip -o src/lib/steamaudio.zip 'steamaudio/include/*' 'steamaudio/lib/*' -d src/lib/
 	rm src/lib/steamaudio.zip
+
+install-steam-audio: download-steam-audio
 	cp src/lib/steamaudio/lib/linux-x64/* project/addons/godot-steam-audio/bin/
 	cp src/lib/steamaudio/lib/windows-x64/* project/addons/godot-steam-audio/bin/
-	cp src/lib/steamaudio/lib/osx/* project/addons/godot-steam-audio/bin/
+	cp -r src/lib/steamaudio/lib/osx/* project/addons/godot-steam-audio/bin/
 	cp src/lib/steamaudio/lib/android-armv8/* project/addons/godot-steam-audio/bin/android/arm64
 	cp src/lib/steamaudio/lib/android-x64/* project/addons/godot-steam-audio/bin/android/x86_64
 	cp src/lib/steamaudio/lib/ios/* project/addons/godot-steam-audio/bin/ios/

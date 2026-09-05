@@ -31,7 +31,7 @@
 		<method name="cancel_bake">
 			<return type="void" />
 			<description>
-				Request cancellation of an editor pathing or reflection bake. Reflection cancellation is cooperative and delivered at an SDK progress callback. Pathing finishes in the background and discards its result because native cancellation is unsafe in Steam Audio 4.5.3. [method is_baking] remains true until the worker exits and cleanup finishes; cancelled results are not applied or saved. Removing the node or closing the scene may wait for this worker.
+				Request cancellation of an editor pathing or reflection bake. Reflection cancellation is cooperative and delivered at an SDK progress callback. Pathing finishes in the background and discards its result; native pathing cancellation is not used. [method is_baking] remains true until the worker exits and cleanup finishes; cancelled results are not applied or saved. Removing the node or closing the scene may wait for this worker.
 			</description>
 		</method>
 		<method name="save_baked_data">

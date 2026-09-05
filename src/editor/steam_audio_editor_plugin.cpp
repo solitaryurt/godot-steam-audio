@@ -53,7 +53,7 @@ void SteamAudioProbeBakePanel::setup(SteamAudioProbeVolume *p_volume) {
 
 	cancel_btn = memnew(Button);
 	cancel_btn->set_text("Cancel");
-	cancel_btn->set_tooltip_text("Discard the bake result. Pathing must finish in the background because native cancellation is unsafe in Steam Audio 4.5.3.");
+	cancel_btn->set_tooltip_text("Discard the bake result. Pathing finishes in the background before its result is discarded; native pathing cancellation is not used.");
 	cancel_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	cancel_btn->connect("pressed", Callable(this, "_on_cancel"));
 	add_child(cancel_btn);

@@ -47,8 +47,8 @@ IPLScene probe_core_create_box_scene(IPLContext ctx, float hx, float hy, float h
 bool probe_core_add_box(IPLScene scene, float cx, float cy, float cz, float hx, float hy, float hz, std::string *err = nullptr);
 void probe_core_destroy_scene(IPLScene *scene);
 
-// volume maps [-0.5,0.5]^3 into world space, using SDK 4.5.3's probe matrix
-// convention (column-major storage). Prefer probe_core_volume_matrix.
+// volume maps [-0.5,0.5]^3 into world space using row-major storage.
+// Prefer probe_core_volume_matrix.
 bool probe_core_generate_batch(IPLContext ctx, IPLScene scene, IPLProbeGenerationType type,
 		IPLMatrix4x4 volume, float spacing, float height,
 		IPLProbeBatch *out_batch, int *out_count, std::string *err = nullptr,

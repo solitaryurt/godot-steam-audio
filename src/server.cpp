@@ -81,8 +81,8 @@ bool SteamAudioServer::can_use_baked_reverb(IPLVector3 point) {
 		auto neighborhood = probe_core_query_neighborhood(entry.probes, point,
 				[this](IPLVector3 from, IPLVector3 to) { return is_probe_visible(from, to); });
 		if (!entry.has_reflections && neighborhood.has_visible_probe) {
-			// Only visible probes survive SDK occlusion filtering and can dilute
-			// the normalized reflection weights with a missing layer.
+			// Visible unbaked probes enter the SDK lookup: 4.5.3 dilutes weights,
+			// while 4.8.1 can use their indices in another batch's reflection data.
 			return false;
 		}
 		visible = (entry.has_reflections && neighborhood.has_guaranteed_visible_probe) || visible;

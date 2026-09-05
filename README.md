@@ -42,6 +42,11 @@ don't have the time nor the money to support that, sorry.
 ### Getting started
 Check [Installation](https://github.com/stechyo/godot-steam-audio/wiki/Installation) for how to install the extension, [Project setup](https://github.com/stechyo/godot-steam-audio/wiki/Project-setup) for how to integrate it with your project, and [Contributing](https://github.com/stechyo/godot-steam-audio/wiki/Contributing) if you're interested in improving the extension.
 
+Source builds use **Steam Audio SDK 4.8.1**, pinned in `Makefile`. After initializing
+the submodules, run `make install-steam-audio` to install matching SDK headers and
+libraries and copy the runtime libraries into the demo addon. Rebuild the extension
+after upgrading the SDK; CI uses the same pinned download.
+
 ### Acknowledgements
 godot-steam-audio is developed by [stechyo](https://github.com/stechyo). [<img src="https://github.com/gauravghongde/social-icons/blob/master/SVG/Color/Twitter.svg" width=14/>](https://twitter.com/stechyo_) [<img src="https://github.com/gauravghongde/social-icons/blob/master/SVG/Color/Youtube.svg" width=14/>](https://www.youtube.com/@Stechyo/)
 Check the [contributors](https://github.com/stechyo/godot-steam-audio/graphs/contributors) for other authors.

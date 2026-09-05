@@ -23,12 +23,13 @@ jobs:
           sudo apt-get install mingw-w64
           sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
           sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
-          curl -LO https://github.com/ValveSoftware/steam-audio/releases/download/v4.8.0/steamaudio_4.8.0.zip
-          unzip steamaudio_4.8.0.zip 'steamaudio/lib/**/*' -d src/lib
+          make download-steam-audio
           cp src/lib/steamaudio/lib/linux-x64/* project/addons/godot-steam-audio/bin/
           cp src/lib/steamaudio/lib/windows-x64/* project/addons/godot-steam-audio/bin/
           cp src/lib/steamaudio/lib/android-armv8/* project/addons/godot-steam-audio/bin/android/arm64
           cp src/lib/steamaudio/lib/android-x64/* project/addons/godot-steam-audio/bin/android/x86_64
+      - name: test-sdk
+        run: make -C tests -B check
       - name: build
         run: |
           scons platform=android arch=arm64 target=template_release && \
@@ -56,8 +57,7 @@ jobs:
         run: |
           PIP_BREAK_SYSTEM_PACKAGES=1 python -m pip install scons==4.4.0
           scons --version
-          curl -LO https://github.com/ValveSoftware/steam-audio/releases/download/v4.8.0/steamaudio_4.8.0.zip
-          unzip steamaudio_4.8.0.zip 'steamaudio/lib/**/*' -d src/lib
+          make download-steam-audio
           cp -r src/lib/steamaudio/lib/osx/* project/addons/godot-steam-audio/bin/
           cp src/lib/steamaudio/lib/ios/* project/addons/godot-steam-audio/bin/ios/
       - name: build-ios-deps
