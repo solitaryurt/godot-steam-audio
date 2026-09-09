@@ -221,11 +221,11 @@ void SteamAudioServer::tick() {
 		bool enabled = cfg.is_reflection_on && ls->src.player != nullptr &&
 				ls->src.player->is_inside_tree() && ls->src.player->is_playing() &&
 				ls->src.player->get_global_position().distance_to(listener->get_global_position()) <= cfg.max_refl_dist;
-		if (enabled && cfg.baked_reverb && !checked_baked_reverb) {
+		if (enabled && !checked_baked_reverb) {
 			baked_reverb_available = can_use_baked_reverb(global_state.listener_coords.origin);
 			checked_baked_reverb = true;
 		}
-		bool baked = enabled && cfg.baked_reverb && baked_reverb_available;
+		bool baked = enabled && baked_reverb_available;
 		{
 			std::lock_guard ir_lock(global_state.refl_ir_lock);
 			ls->refl_outputs = {};
@@ -292,7 +292,7 @@ void SteamAudioServer::tick() {
 	for (auto ls : self->local_states) {
 		std::unique_lock lock(ls->mux);
 		const auto &cfg = ls->cfg;
-		bool enabled = cfg.is_pathing_on && pathing_batch != nullptr && ls->src.player != nullptr &&
+		bool enabled = pathing_batch != nullptr && ls->src.player != nullptr &&
 				ls->src.player->is_inside_tree() && ls->src.player->is_playing();
 		if (enabled) {
 			IPLVector3 source = ipl_vec3_from(ls->src.player->get_global_position());

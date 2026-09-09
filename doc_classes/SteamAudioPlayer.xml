@@ -4,6 +4,8 @@
 		This player's transform is used as the audio source transform in the SteamAudio simulation.
 	</brief_description>
 	<description>
+		Processes an inner [AudioStream] through Steam Audio's direct sound, spatialization, reflection, and pathing effects. The inherited [member AudioStreamPlayer3D.panning_strength] is always forced to 0; use [member ambisonics] to spatialize the direct sound.
+		At runtime the configured stream is wrapped in a [SteamAudioStream]. Use [method play_stream] instead of assigning [member AudioStreamPlayer.stream] when replacing a playing sound.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -11,13 +13,13 @@
 		<method name="get_inner_stream">
 			<return type="AudioStream" />
 			<description>
-				Returns the player's inner [AudioStream]
+				Returns the user-provided [AudioStream] wrapped by the internal [SteamAudioStream].
 			</description>
 		</method>
 		<method name="get_inner_stream_playback">
 			<return type="AudioStreamPlayback" />
 			<description>
-				Returns the player's inner [AudioStreamPlayback]
+				Returns the current inner [AudioStreamPlayback], or [code]null[/code] while the player is not playing.
 			</description>
 		</method>
 		<method name="play_stream">
@@ -27,39 +29,56 @@
 			<param index="2" name="volume_db" type="float" default="0" />
 			<param index="3" name="pitch_scale" type="float" default="1.0" />
 			<description>
-				Plays the given stream starting at from_offset, at the defined volume and pitch scale.
-            [b]A very important note[/b]: play_stream is what you want to use if you'd like to change a SteamAudioPlayer's stream at runtime. Do not try to set the player's stream directly through set_stream, as that will disable all SteamAudio effects for that player. At runtime, the stream you've configured will be replaced with a [SteamAudioStream]. This stream has an inner stream which corresponds to what you configured in the scene.
+				Replaces the inner stream and starts it at [param from_offset] while preserving Steam Audio processing. Stops and restarts the player if it is already playing. [param volume_db] and [param pitch_scale] are currently ignored; set the inherited player properties instead.
 			</description>
 		</method>
 	</methods>
 	<members>
+		<member name="air_absorption" type="bool" setter="set_air_absorp_on" getter="is_air_absorp_on" default="false">
+			Enables frequency-dependent attenuation through air over the source-to-listener distance.
+		</member>
+		<member name="air_absorption_high" type="float" setter="set_air_absorption_high" getter="get_air_absorption_high" default="0.5">
+			Exponential decay coefficient for high frequencies. Used only when [member air_absorption] is enabled and [member air_absorption_model] is Exponential. Higher values attenuate this band faster with distance.
+		</member>
+		<member name="air_absorption_low" type="float" setter="set_air_absorption_low" getter="get_air_absorption_low" default="0.9">
+			Exponential decay coefficient for low frequencies. Used only when [member air_absorption] is enabled and [member air_absorption_model] is Exponential. Higher values attenuate this band faster with distance.
+		</member>
+		<member name="air_absorption_mid" type="float" setter="set_air_absorption_mid" getter="get_air_absorption_mid" default="0.7">
+			Exponential decay coefficient for middle frequencies. Used only when [member air_absorption] is enabled and [member air_absorption_model] is Exponential. Higher values attenuate this band faster with distance.
+		</member>
+		<member name="air_absorption_model" type="int" setter="set_air_absorption_model_type" getter="get_air_absorption_model_type" default="0">
+			Air-absorption model. Default derives physical decay rates from standard air properties. Exponential uses the low, middle, and high coefficients configured on this player.
+		</member>
+		<member name="ambisonics" type="bool" setter="set_ambisonics_on" getter="is_ambisonics_on" default="true">
+			Spatializes the dry direct sound relative to the listener using ambisonic encoding and binaural HRTF decoding. When disabled, the processed inner stream is mixed without Steam Audio directional spatialization. Godot panning remains disabled in both modes.
+		</member>
 		<member name="ambisonics_order" type="int" setter="set_ambisonics_order" getter="get_ambisonics_order" default="1">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/ambisonics-encode-effect.html#_CPPv4N31IPLAmbisonicsEncodeEffectParams5orderE]IPLAmbisonicsEncodeEffectParams.order[/url].
+			Ambisonic order used for direct spatialization and reflection rendering. Higher orders improve directional detail but use more channels and processing. Values are clamped to the maximum allocated when [SteamAudioConfig] initialized.
 		</member>
 		<member name="distance_attenuation" type="bool" setter="set_dist_attn_on" getter="is_dist_attn_on" default="false">
-            Whether SteamAudio distance attenuation is enabled. Keep in mind that this is disabled by default, and enabling it will disable Godot's built-in attenuation, which you can only re-enable when you disable this.
+			Enables Steam Audio inverse-distance attenuation. Enabling it disables Godot's inherited attenuation model; disable this option before using Godot attenuation again.
 		</member>
-		<member name="baked_reverb" type="bool" setter="set_baked_reverb_on" getter="is_baked_reverb_on" default="false">
-			Opt in to listener-centric baked reverb from [SteamAudioProbeVolume] when [member reflection] is enabled. This is a room response at the listener, not source-to-listener reflections. By default reflections remain real-time, even when baked data is loaded.
-			The baked wet send uses the source's Steam Audio distance attenuation when enabled; otherwise Godot's attenuation applies to the final mix. Real-time reflections are not attenuated again in the wet send.
-			Falls back to real-time when a visible reflection-bearing probe neighborhood cannot be guaranteed. Visible influencing probes in path-only batches and missing probe metadata prevent baked selection; fully occluded path-only probes do not. Steam Audio selects at most eight influencing probes per batch before ray occlusion. A batch establishes a usable neighborhood when at least one influence is visible and fewer than eight are occluded, even if more than eight probes overlap. Probe boundaries are included. Visibility uses the committed Steam Audio scene, including dynamic geometry.
+		<member name="directivity" type="bool" setter="set_directivity_on" getter="is_directivity_on" default="false">
+			Attenuates sound according to the source's orientation and weighted dipole pattern. The pattern is aligned with the source's local -Z forward axis.
+		</member>
+		<member name="dipole_power" type="float" setter="set_dipole_power" getter="get_dipole_power" default="1.0">
+			Sharpness of the dipole directivity pattern. Higher values focus emission into narrower directions. Used only when [member directivity] is enabled.
+		</member>
+		<member name="dipole_weight" type="float" setter="set_dipole_weight" getter="get_dipole_weight" default="0.0">
+			Blend between omnidirectional emission at 0, a cardioid pattern at 0.5, and a pure dipole at 1. Used only when [member directivity] is enabled.
 		</member>
 		<member name="max_reflection_distance" type="float" setter="set_max_reflection_distance" getter="get_max_reflection_distance" default="10000.0">
             The maximum distance from the listener at which reflection simulation and its wet mix are enabled for this audio source.
 		</member>
 		<member name="min_attenuation_distance" type="float" setter="set_min_attenuation_distance" getter="get_min_attenuation_distance" default="0.0">
-            See
-            [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N27IPLDistanceAttenuationModel11minDistanceE]IPLDistanceAttenuationModel.minDistance[/url], and note the distance attenuation type in godot-steam-audio is always [code]IPL_DISTANCEATTENUATIONTYPE_INVERSEDISTANCE[/code].
-		</member>
-		<member name="pathing" type="bool" setter="set_pathing_on" getter="is_pathing_on" default="false">
-			Enable baked pathing (sound around corners via [SteamAudioProbeVolume]). Requires baked pathing data in the scene.
-			For occluded sources, pathing is muted when a visible source/listener probe neighborhood cannot be guaranteed, including missing probe metadata, no visible influences, or eight or more occluded influences in the selected batch. Dense visible neighborhoods and visible probe boundaries remain usable. This avoids replaying stale SDK path coefficients.
+			See
+			[url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N27IPLDistanceAttenuationModel11minDistanceE]IPLDistanceAttenuationModel.minDistance[/url], and note the distance attenuation type in godot-steam-audio is always [code]IPL_DISTANCEATTENUATIONTYPE_INVERSEDISTANCE[/code].
 		</member>
 		<member name="pathing_find_alternate" type="bool" setter="set_pathing_find_alternate_on" getter="is_pathing_find_alternate_on" default="false">
 			If validation is on and a baked path is blocked by dynamic geometry, search for an alternate path.
 		</member>
 		<member name="pathing_mix_level" type="float" setter="set_pathing_mix_level" getter="get_pathing_mix_level" default="1.0">
-			Gain applied to the pathing wet mix.
+			Gain applied to the pathing wet mix. Baked pathing is used automatically when pathing data is present. For occluded sources, pathing is muted when a visible source/listener probe neighborhood cannot be guaranteed, including missing probe metadata, no visible influences, or eight or more occluded influences in the selected batch.
 		</member>
 		<member name="pathing_order" type="int" setter="set_pathing_order" getter="get_pathing_order" default="1">
 			Ambisonic order used to spatialize pathing, clamped to the simulator's allocated maximum. Audio uses the order of the completed simulation, not a setting changed while that simulation was running.
@@ -68,19 +87,22 @@
 			Re-test baked paths against dynamic geometry (doors, movers).
 		</member>
 		<member name="occlusion" type="bool" setter="set_occlusion_on" getter="is_occlusion_on" default="true">
-			Whether SteamAudio occlusion and transmission is enabled.
+			Whether Steam Audio occlusion and transmission is enabled. Direct occlusion is ray-traced at runtime; the Steam Audio SDK does not provide baked direct occlusion data.
 		</member>
 		<member name="occlusion_radius" type="float" setter="set_occlusion_radius" getter="get_occlusion_radius" default="4.0">
 			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N19IPLSimulationInputs15occlusionRadiusE]IPLSimulationInputs.occlusionRadius[/url].
 		</member>
 		<member name="occlusion_samples" type="int" setter="set_occlusion_samples" getter="get_occlusion_samples" default="32">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N19IPLSimulationInputs19numOcclusionSamplesE]IPLSimulationInputs.numOcclusionSamples.
+			Number of samples used for volumetric occlusion. Higher values make partial occlusion smoother at greater simulation cost. Clamped at startup to [member SteamAudioConfig.max_occlusion_samples].
 		</member>
 		<member name="reflection" type="bool" setter="set_reflection_on" getter="is_reflection_on" default="false">
-			Whether SteamAudio reflection is on.
+			Enables the reflected wet signal. Automatically uses listener-centric baked reverb when a usable reflection-bearing probe neighborhood is available, and otherwise falls back to real-time source reflections.
 		</member>
 		<member name="transmission_rays" type="int" setter="set_transmission_rays" getter="get_transmission_rays" default="16">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N19IPLSimulationInputs19numTransmissionRaysE]IPLSimulationInputs.numTransmissionRays[/url].
+			Number of rays used to estimate sound transmitted through occluding geometry. Higher values improve stability at increased simulation cost. Used only when [member occlusion] is enabled.
+		</member>
+		<member name="transmission_type" type="int" setter="set_transmission_type" getter="get_transmission_type" default="1">
+			Controls how material transmission is applied when [member occlusion] is enabled. Frequency-Independent uses one broadband attenuation value; Frequency-Dependent preserves separate low, middle, and high frequency transmission.
 		</member>
 	</members>
 </class>

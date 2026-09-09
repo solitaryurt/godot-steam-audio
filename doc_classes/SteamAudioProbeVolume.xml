@@ -5,6 +5,8 @@
 	</brief_description>
 	<description>
 		Place this node so its [member size] box covers the listener area. Generate probes, then bake pathing and/or listener-centric convolution reflections. At runtime the batch is loaded into [SteamAudioServer].
+		The properties in the Bake group configure pathing only, while Reflection Bake properties configure baked reverb. Changing either group does not modify existing baked data; run the corresponding bake again to apply new settings.
+		Generation and baking use a snapshot of [SteamAudioGeometry] nodes in the edited scene; [SteamAudioDynamicGeometry] is not included. Uniform Floor generation and pathing bakes add a thin fallback floor at the bottom of this volume. Only one Steam Audio bake can run in the process at a time.
 		Older batches without stored probe positions and radii must be explicitly regenerated before baking. The Steam Audio SDK cannot read these spheres back from a loaded batch; current volume settings are not used to guess them. Removing the node from the tree cancels and discards its pending bake, waiting for the SDK worker to stop.
 	</description>
 	<tutorials>
@@ -25,7 +27,7 @@
 		<method name="bake_reflections">
 			<return type="void" />
 			<description>
-				Bake listener-centric convolution reverb at every probe. Players must enable [member SteamAudioPlayer.baked_reverb] to use available baked data; source reflections remain real-time by default. In the editor this runs in the background.
+				Bake listener-centric convolution reverb at every probe. Players with [member SteamAudioPlayer.reflection] enabled automatically use available baked data and fall back to real-time reflections outside a usable probe neighborhood. In the editor this runs in the background.
 			</description>
 		</method>
 		<method name="cancel_bake">
@@ -72,6 +74,18 @@
 		</method>
 	</methods>
 	<members>
+		<member name="bake_radius" type="float" setter="set_bake_radius" getter="get_bake_radius" default="1.0">
+			Radius in meters of the sphere around each probe used for path-visibility sampling. A larger radius samples more possible positions around probes and can preserve connections near obstacles, but may accept paths through wider openings than a point-sized probe would.
+		</member>
+		<member name="bake_samples" type="int" setter="set_bake_samples" getter="get_bake_samples" default="1">
+			Number of sample points placed within each probe's [member bake_radius] when testing visibility between two probes. Each probe pair traces this value squared rays. Higher values make visibility tests more robust but can greatly increase pathing bake time.
+		</member>
+		<member name="bake_threads" type="int" setter="set_bake_threads" getter="get_bake_threads" default="4">
+			Number of CPU worker threads used by the pathing baker. Higher values may reduce bake time while increasing CPU usage. This does not affect runtime pathing cost.
+		</member>
+		<member name="bake_threshold" type="float" setter="set_bake_threshold" getter="get_bake_threshold" default="0.5">
+			Minimum fraction of unoccluded visibility rays required to connect two probes. Higher values reject partially blocked connections and produce more conservative paths. Steam Audio requires the visible fraction to be strictly greater than this value, so [code]1.0[/code] rejects every connection.
+		</member>
 		<member name="baked_data" type="SteamAudioProbeBatchData" setter="set_baked_data" getter="get_baked_data">
 			Serialized probe batch, including pathing data after a bake. Stored as an external resource at [member save_path]. Reassignment is rejected while [method is_baking] is true. A bake snapshots its input metadata; direct edits to resource properties during a successful bake are replaced by the completed result.
 		</member>
@@ -91,29 +105,35 @@
 		<member name="height" type="float" setter="set_height" getter="get_height" default="1.5">
 			Height above the floor for uniform-floor probes, in meters.
 		</member>
+		<member name="path_range" type="float" setter="set_path_range" getter="get_path_range" default="100.0">
+			Maximum allowed path length between probes, in meters. Increasing it lets sound propagate over longer routes, at the cost of increased pathing bake time and baked-data memory.
+		</member>
 		<member name="reflection_bounces" type="int" setter="set_reflection_bounces" getter="get_reflection_bounces" default="8">
-			Number of reflected ray bounces simulated at each probe.
+			Maximum number of times each ray reflects from geometry. Higher values capture longer, more accurate reverb tails at increased bake time.
 		</member>
 		<member name="reflection_diffuse_samples" type="int" setter="set_reflection_diffuse_samples" getter="get_reflection_diffuse_samples" default="32">
-			Number of diffuse reflection directions considered during baking.
+			Number of directions considered when generating diffusely reflected rays. Higher values can slightly improve diffuse-reflection accuracy at increased bake time.
 		</member>
 		<member name="reflection_irradiance_min_distance" type="float" setter="set_reflection_irradiance_min_distance" getter="get_reflection_irradiance_min_distance" default="1.0">
-			Minimum source-to-surface distance used for reflected energy calculations.
+			Minimum source-to-surface distance in meters used when calculating reflected energy. Sources closer to a surface are treated as being this far away, preventing unrealistically large energy values.
 		</member>
 		<member name="reflection_order" type="int" setter="set_reflection_order" getter="get_reflection_order" default="1">
-			Ambisonic order of the baked impulse responses.
+			Ambisonic order of the baked impulse responses. Higher orders retain more directional detail but increase bake time, baked-data size, and runtime memory and processing cost.
 		</member>
 		<member name="reflection_rays" type="int" setter="set_reflection_rays" getter="get_reflection_rays" default="1024">
-			Number of rays traced at each probe.
+			Number of rays traced from each probe. Higher values reduce simulation noise and improve accuracy at increased bake time.
 		</member>
 		<member name="reflection_saved_duration" type="float" setter="set_reflection_saved_duration" getter="get_reflection_saved_duration" default="1.0">
-			Length in seconds of each impulse response stored in the bake.
+			Length in seconds of each impulse response stored in the bake. Longer durations preserve longer reverb tails but increase disk size, load time, runtime memory, and convolution cost. Values above [member reflection_simulated_duration] are clamped to the simulated duration.
 		</member>
 		<member name="reflection_simulated_duration" type="float" setter="set_reflection_simulated_duration" getter="get_reflection_simulated_duration" default="1.0">
-			Length in seconds simulated when generating each impulse response.
+			Length in seconds simulated when generating each impulse response. Longer durations model larger spaces and longer tails but increase temporary memory use and bake time. This may exceed [member reflection_saved_duration] so the saved bake retains only the early response.
 		</member>
 		<member name="reflection_threads" type="int" setter="set_reflection_threads" getter="get_reflection_threads" default="4">
-			Number of worker threads used by the reflection baker.
+			Number of CPU worker threads used by the reflection baker. Higher values may reduce bake time while increasing CPU usage. This does not affect runtime reflection threads.
+		</member>
+		<member name="vis_range" type="float" setter="set_vis_range" getter="get_vis_range" default="50.0">
+			Maximum distance in meters at which two probes can receive a direct visibility connection in the baked pathing graph. Increasing it can produce simpler routes, but increases pathing bake time.
 		</member>
 	</members>
 	<signals>

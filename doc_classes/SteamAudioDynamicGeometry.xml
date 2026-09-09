@@ -21,12 +21,13 @@
 		<method name="recalculate">
 			<return type="void" />
 			<description>
+				Recreates and re-registers the internal acoustic mesh from the current parent geometry and [member material]. Transform-only movement is updated automatically every physics frame and does not require this method.
 			</description>
 		</method>
 	</methods>
 	<members>
 		<member name="material" type="SteamAudioMaterial" setter="set_material" getter="get_material">
-			The geometry's material.
+			Acoustic surface properties used when the internal mesh is created. Call [method recalculate] after changing this at runtime. A missing material produces zero-valued acoustic coefficients.
 		</member>
 	</members>
 </class>

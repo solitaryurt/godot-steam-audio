@@ -64,7 +64,6 @@ struct SteamAudioSourceConfig {
 	bool is_directivity_on;
 	float dipole_weight;
 	float dipole_power;
-	bool is_pathing_on;
 	float pathing_mix_level;
 	int pathing_order;
 	bool pathing_validation;
@@ -72,7 +71,6 @@ struct SteamAudioSourceConfig {
 	float vis_radius;
 	float vis_threshold;
 	float vis_range;
-	bool baked_reverb = false;
 };
 
 struct SteamAudioEffects {

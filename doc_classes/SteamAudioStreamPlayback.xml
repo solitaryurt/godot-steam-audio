@@ -4,6 +4,7 @@
         This playback will contain an audio stream that you provided when configuring your Godot scene, and it will apply the SteamAudio effects configured in the corresponding [SteamAudioPlayer] to it.
 	</brief_description>
 	<description>
+		Internal playback wrapper created by [SteamAudioStream]. Application code should normally use [method SteamAudioPlayer.play_stream] instead.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -15,6 +16,7 @@
 			<param index="2" name="volume_db" type="float" default="0" />
 			<param index="3" name="pitch_scale" type="float" default="1.0" />
 			<description>
+				Instantiates playback for [param stream] and starts it at [param from_offset]. Returns 0. [param volume_db] and [param pitch_scale] are currently ignored.
 			</description>
 		</method>
 	</methods>

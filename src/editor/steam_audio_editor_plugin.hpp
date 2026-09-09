@@ -2,6 +2,7 @@
 #define STEAM_AUDIO_EDITOR_PLUGIN_H
 
 #include "godot_cpp/classes/button.hpp"
+#include "godot_cpp/classes/camera3d.hpp"
 #include "godot_cpp/classes/editor_inspector_plugin.hpp"
 #include "godot_cpp/classes/editor_node3d_gizmo_plugin.hpp"
 #include "godot_cpp/classes/editor_plugin.hpp"
@@ -53,6 +54,9 @@ class SteamAudioProbeVolumeGizmoPlugin : public EditorNode3DGizmoPlugin {
 	GDCLASS(SteamAudioProbeVolumeGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	bool materials_ready = false;
+	Vector3 handle_start_position;
+	Vector3 handle_start_size;
+	Vector3 handle_start_scale;
 	void ensure_materials();
 
 protected:
@@ -62,6 +66,13 @@ public:
 	bool _has_gizmo(Node3D *p_for_node_3d) const override;
 	String _get_gizmo_name() const override;
 	int32_t _get_priority() const override;
+	String _get_handle_name(const Ref<EditorNode3DGizmo> &p_gizmo, int32_t p_handle_id, bool p_secondary) const override;
+	Variant _get_handle_value(const Ref<EditorNode3DGizmo> &p_gizmo, int32_t p_handle_id, bool p_secondary) const override;
+	void _begin_handle_action(const Ref<EditorNode3DGizmo> &p_gizmo, int32_t p_handle_id, bool p_secondary) override;
+	void _set_handle(const Ref<EditorNode3DGizmo> &p_gizmo, int32_t p_handle_id, bool p_secondary,
+			Camera3D *p_camera, const Vector2 &p_screen_pos) override;
+	void _commit_handle(const Ref<EditorNode3DGizmo> &p_gizmo, int32_t p_handle_id, bool p_secondary,
+			const Variant &p_restore, bool p_cancel) override;
 	void _redraw(const Ref<EditorNode3DGizmo> &p_gizmo) override;
 };
 

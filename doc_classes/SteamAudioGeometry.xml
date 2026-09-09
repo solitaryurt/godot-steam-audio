@@ -26,10 +26,10 @@
 	</methods>
 	<members>
 		<member name="disabled" type="bool" setter="set_disabled" getter="is_disabled" default="false">
-			Whether the geometry is disabled.
+			Disables this geometry in the runtime simulation. This does not exclude it from probe generation or baking; editor bakes currently include every [SteamAudioGeometry] in the scene.
 		</member>
 		<member name="material" type="SteamAudioMaterial" setter="set_material" getter="get_material">
-			The geometry's material.
+			Acoustic surface properties used when the internal mesh is created. Call [method recalculate] after changing this at runtime. A missing material produces zero-valued acoustic coefficients.
 		</member>
 	</members>
 </class>

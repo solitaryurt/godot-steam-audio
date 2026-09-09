@@ -1,42 +1,44 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="SteamAudioConfig" inherits="Node3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
 	<brief_description>
+		Initializes and advances the global Steam Audio simulation.
 	</brief_description>
 	<description>
-		This node makes [SteamAudioServer] tick. You must have one, and only one, instance of it in your scene if you'd like the extension to do anything.
+		Exactly one instance must be present in the running scene. It initializes [SteamAudioServer] when it enters the tree and advances simulation every physics frame.
+		Performance settings are global allocation limits read during initialization. Configure them before this node enters the tree; changing them afterward does not resize the existing simulator and generally requires restarting the scene.
 	</description>
 	<tutorials>
 	</tutorials>
 	<members>
 		<member name="diffuse_samples" type="int" setter="set_num_diffuse_samples" getter="get_num_diffuse_samples" default="32">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings17numDiffuseSamplesE]IPLSimulationSettings.numDiffuseSamples[/url]
+			Number of directions considered when generating diffuse reflection rays. Higher values can improve real-time reflection accuracy at increased simulation cost.
 		</member>
 		<member name="global_log_level" type="int" setter="set_global_log_level" getter="get_global_log_level" enum="SteamAudio.GodotSteamAudioLogLevel" default="1">
 			The global log level for this extension. Setting it to a lower level will show more logs.
 		</member>
 		<member name="hrtf_volume" type="float" setter="set_hrtf_volume" getter="get_hrtf_volume" default="1.0">
-			Audio volume (see [url=https://valvesoftware.github.io/steam-audio/doc/capi/hrtf.html#_CPPv4N15IPLHRTFSettings6volumeE]IPLHRTFSettings.volume[/url])
+			Gain applied by the default HRTF used for binaural decoding.
 		</member>
 		<member name="max_ambisonics_order" type="int" setter="set_max_ambisonics_order" getter="get_max_ambisonics_order" default="1">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings8maxOrderE]IPLSimulationSettings.maxOrder[/url]
+			Maximum ambisonic order allocated for players, pathing, and reflections. Higher values improve directional detail but increase channel count, memory, and processing cost. Per-node orders are clamped to this initialized maximum.
 		</member>
 		<member name="max_occlusion_samples" type="int" setter="set_max_num_occ_samples" getter="get_max_num_occ_samples" default="64">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings22maxNumOcclusionSamplesE]IPLSimulationSettings.maxNumOcclusionSamples[/url]
+			Maximum volumetric occlusion samples allocated per source. Player values above this limit are clamped when they enter the scene.
 		</member>
 		<member name="max_reflection_duration" type="float" setter="set_max_refl_duration" getter="get_max_refl_duration" default="2.0">
-            Higher values will result in more realistic reflections, but this will impact performance - see [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings11maxDurationE]IPLSimulationSettings.maxDuration[/url]
+			Maximum real-time reflection impulse-response duration in seconds. Higher values preserve longer reverb tails but increase memory and convolution cost. Listener duration is clamped to this initialized maximum.
 		</member>
 		<member name="max_reflection_rays" type="int" setter="set_max_num_refl_rays" getter="get_max_num_refl_rays" default="4096">
-            Overrides each source's max_reflection_rays setting - see [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings10maxNumRaysE]IPLSimulationSettings.maxNumRays[/url]
+			Maximum rays allocated for each real-time reflection simulation. [member SteamAudioListener.reflection_rays] is clamped to this value at startup. Higher limits permit more accurate simulation at increased CPU cost.
 		</member>
-		<member name="max_reflection_sources" type="float" setter="set_max_num_refl_srcs" getter="get_max_num_refl_srcs" default="8.0">
-			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings13maxNumSourcesE]IPLSimulationSettings.maxNumSources[/url]
+		<member name="max_reflection_sources" type="int" setter="set_max_num_refl_srcs" getter="get_max_num_refl_srcs" default="8">
+			Maximum number of sources for which the simulator allocates real-time reflection state. Increase this when more reflected sources must be processed concurrently, at additional memory and CPU cost.
 		</member>
-		<member name="reflection_threads" type="float" setter="set_num_refl_threads" getter="get_num_refl_threads" default="2.0">
-            Number of threads that reflection simulation will use (see [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N21IPLSimulationSettings10numThreadsE]IPLSimulationSettings.numThreads[/url])
+		<member name="reflection_threads" type="int" setter="set_num_refl_threads" getter="get_num_refl_threads" default="2">
+			Number of worker threads allocated for runtime reflection simulation. This is separate from [member SteamAudioProbeVolume.reflection_threads], which controls offline baking.
 		</member>
 		<member name="scene_type" type="int" setter="set_scene_type" getter="get_scene_type" enum="IPLSceneType" default="1">
-            The ray tracing implementation to use - see [url=https://valvesoftware.github.io/steam-audio/doc/capi/scene.html#_CPPv412IPLSceneType]IPLSceneType[/url]
+			Ray-tracing implementation used by the runtime scene. Embree may be faster for complex geometry but is unavailable on Apple Silicon, Android, and iOS; those platforms automatically fall back to Default.
 		</member>
 	</members>
 </class>

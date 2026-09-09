@@ -1,6 +1,8 @@
 #include "steam_audio_editor_plugin.hpp"
 
 #include "godot_cpp/classes/editor_node3d_gizmo.hpp"
+#include "godot_cpp/classes/editor_interface.hpp"
+#include "godot_cpp/classes/editor_undo_redo_manager.hpp"
 #include "godot_cpp/classes/material.hpp"
 #include "godot_cpp/classes/standard_material3d.hpp"
 #include "godot_cpp/classes/text_server.hpp"
@@ -189,7 +191,114 @@ void SteamAudioProbeVolumeGizmoPlugin::ensure_materials() {
 	create_material("volume", Color(0.25f, 0.7f, 1.0f), false, true);
 	create_material("probes", Color(1.0f, 0.55f, 0.15f), false, true);
 	create_material("probes_baked", Color(0.2f, 0.95f, 0.45f), false, true);
+	create_handle_material("handles");
 	materials_ready = true;
+}
+
+String SteamAudioProbeVolumeGizmoPlugin::_get_handle_name(const Ref<EditorNode3DGizmo> &p_gizmo,
+		int32_t p_handle_id, bool p_secondary) const {
+	(void)p_gizmo;
+	(void)p_secondary;
+	static const char *names[] = { "Size X+", "Size X-", "Size Y+", "Size Y-", "Size Z+", "Size Z-" };
+	return p_handle_id >= 0 && p_handle_id < 6 ? names[p_handle_id] : "";
+}
+
+Variant SteamAudioProbeVolumeGizmoPlugin::_get_handle_value(const Ref<EditorNode3DGizmo> &p_gizmo,
+		int32_t p_handle_id, bool p_secondary) const {
+	(void)p_handle_id;
+	(void)p_secondary;
+	auto *vol = Object::cast_to<SteamAudioProbeVolume>(p_gizmo->get_node_3d());
+	return vol ? Variant(AABB(vol->get_global_position(), vol->get_size())) : Variant();
+}
+
+void SteamAudioProbeVolumeGizmoPlugin::_begin_handle_action(const Ref<EditorNode3DGizmo> &p_gizmo,
+		int32_t p_handle_id, bool p_secondary) {
+	(void)p_handle_id;
+	(void)p_secondary;
+	auto *vol = Object::cast_to<SteamAudioProbeVolume>(p_gizmo->get_node_3d());
+	if (!vol) {
+		return;
+	}
+	handle_start_position = vol->get_global_position();
+	handle_start_size = vol->get_size();
+	handle_start_scale = vol->get_global_transform().basis.get_scale().abs();
+}
+
+void SteamAudioProbeVolumeGizmoPlugin::_set_handle(const Ref<EditorNode3DGizmo> &p_gizmo,
+		int32_t p_handle_id, bool p_secondary, Camera3D *p_camera, const Vector2 &p_screen_pos) {
+	(void)p_secondary;
+	auto *vol = Object::cast_to<SteamAudioProbeVolume>(p_gizmo->get_node_3d());
+	if (!vol || !p_camera || p_handle_id < 0 || p_handle_id >= 6) {
+		return;
+	}
+
+	const int axis_index = p_handle_id / 2;
+	const float sign = (p_handle_id % 2 == 0) ? 1.0f : -1.0f;
+	Vector3 axis;
+	axis[axis_index] = 1.0f;
+	const Vector3 ray_origin = p_camera->project_ray_origin(p_screen_pos);
+	const Vector3 ray_direction = p_camera->project_ray_normal(p_screen_pos).normalized();
+	const Vector3 between = handle_start_position - ray_origin;
+	const float parallel = axis.dot(ray_direction);
+	const float denominator = 1.0f - parallel * parallel;
+	if (Math::abs(denominator) < 0.00001f) {
+		return;
+	}
+	const float axis_offset = axis.dot(between);
+	const float ray_offset = ray_direction.dot(between);
+	float ray_distance = (ray_offset - parallel * axis_offset) / denominator;
+	float axis_distance;
+	if (ray_distance < 0.0f) {
+		axis_distance = -axis_offset;
+	} else if (ray_distance > 16384.0f) {
+		axis_distance = -axis_offset + parallel * 16384.0f;
+	} else {
+		axis_distance = (parallel * ray_offset - axis_offset) / denominator;
+	}
+	float face = handle_start_position[axis_index] + axis_distance;
+
+	const float scale = MAX(handle_start_scale[axis_index], 0.00001f);
+	const float half_extent = handle_start_size[axis_index] * scale * 0.5f;
+	const float opposite_face = handle_start_position[axis_index] - sign * half_extent;
+	const float minimum_extent = 0.1f * scale;
+	if (sign * (face - opposite_face) < minimum_extent) {
+		face = opposite_face + sign * minimum_extent;
+	}
+
+	Vector3 size = handle_start_size;
+	Vector3 position = handle_start_position;
+	size[axis_index] = sign * (face - opposite_face) / scale;
+	position[axis_index] = (face + opposite_face) * 0.5f;
+	vol->set_size(size);
+	vol->set_global_position(position);
+}
+
+void SteamAudioProbeVolumeGizmoPlugin::_commit_handle(const Ref<EditorNode3DGizmo> &p_gizmo,
+		int32_t p_handle_id, bool p_secondary, const Variant &p_restore, bool p_cancel) {
+	(void)p_handle_id;
+	(void)p_secondary;
+	auto *vol = Object::cast_to<SteamAudioProbeVolume>(p_gizmo->get_node_3d());
+	if (!vol || p_restore.get_type() != Variant::AABB) {
+		return;
+	}
+	const AABB restore = p_restore;
+	if (p_cancel) {
+		vol->set_size(restore.size);
+		vol->set_global_position(restore.position);
+		return;
+	}
+	if (vol->get_size().is_equal_approx(restore.size) &&
+			vol->get_global_position().is_equal_approx(restore.position)) {
+		return;
+	}
+
+	EditorUndoRedoManager *undo_redo = EditorInterface::get_singleton()->get_editor_undo_redo();
+	undo_redo->create_action("Resize Steam Audio Probe Volume", UndoRedo::MERGE_DISABLE, vol);
+	undo_redo->add_do_method(vol, "set_size", vol->get_size());
+	undo_redo->add_do_method(vol, "set_global_position", vol->get_global_position());
+	undo_redo->add_undo_method(vol, "set_global_position", restore.position);
+	undo_redo->add_undo_method(vol, "set_size", restore.size);
+	undo_redo->commit_action(false);
 }
 
 bool SteamAudioProbeVolumeGizmoPlugin::_has_gizmo(Node3D *p_for_node_3d) const {
@@ -259,6 +368,15 @@ void SteamAudioProbeVolumeGizmoPlugin::_redraw(const Ref<EditorNode3DGizmo> &p_g
 	Ref<Material> volume_mat = get_material("volume", p_gizmo);
 	p_gizmo->add_lines(box, volume_mat);
 	p_gizmo->add_collision_segments(box);
+	PackedVector3Array handles;
+	const Vector3 world_half_extent = global_transform.basis.get_scale().abs() * vol->get_size() * 0.5f;
+	for (int axis = 0; axis < 3; axis++) {
+		Vector3 offset;
+		offset[axis] = world_half_extent[axis];
+		handles.push_back(world_to_local.xform(global_transform.origin + offset));
+		handles.push_back(world_to_local.xform(global_transform.origin - offset));
+	}
+	p_gizmo->add_handles(handles, get_material("handles", p_gizmo), PackedInt32Array());
 
 	PackedVector3Array positions = vol->get_probe_positions();
 	if (positions.is_empty()) {

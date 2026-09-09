@@ -186,7 +186,7 @@ int32_t SteamAudioStreamPlayback::_mix(AudioFrame *buffer, float rate_scale, int
 			SteamAudio::log(SteamAudio::log_debug, "mixing: mixing reflection and direct buffers");
 			iplAudioBufferMix(gs->ctx, &ls->bufs.refl_out, &ls->bufs.out);
 		}
-		if (ls->cfg.is_pathing_on && ls->fx.path && ls->path_outputs.shCoeffs) {
+		if (ls->fx.path && ls->path_outputs.shCoeffs) {
 			IPLPathEffectParams path_params = ls->path_outputs;
 			path_params.binaural = IPL_TRUE;
 			path_params.hrtf = gs->hrtf;

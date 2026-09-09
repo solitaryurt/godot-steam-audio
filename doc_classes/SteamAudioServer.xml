@@ -4,6 +4,7 @@
 		This is a singleton that handles all SteamAudio global state. You should not interact with it directly.
 	</brief_description>
 	<description>
+		Owns the Steam Audio context, scene, simulator, HRTF, sources, geometry, and probe batches. [SteamAudioConfig] initializes and advances it automatically; application code normally should not call [method tick].
 	</description>
 	<tutorials>
 	</tutorials>
@@ -11,11 +12,13 @@
 		<method name="get_singleton" qualifiers="static">
 			<return type="SteamAudioServer" />
 			<description>
+				Returns the extension's global server instance.
 			</description>
 		</method>
 		<method name="tick">
 			<return type="void" />
 			<description>
+				Submits current source and listener inputs, runs direct simulation, schedules reflections, and updates pathing. Called automatically each physics frame by [SteamAudioConfig].
 			</description>
 		</method>
 	</methods>
