@@ -5,6 +5,10 @@ on: [push]
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-linux-windows-android:
     runs-on: ubuntu-22.04
