@@ -58,8 +58,14 @@
 		<member name="distance_attenuation" type="bool" setter="set_dist_attn_on" getter="is_dist_attn_on" default="false">
 			Enables Steam Audio inverse-distance attenuation. Enabling it disables Godot's inherited attenuation model; disable this option before using Godot attenuation again.
 		</member>
+		<member name="effect_tails" type="bool" setter="set_effect_tails_on" getter="are_effect_tails_on" default="true">
+			Continues rendering reflection and pathing audio after the inner stream ends naturally, until Steam Audio reports that their tails are complete. Disabling this ends playback with the inner stream. Calling the inherited [method AudioStreamPlayer3D.stop] remains immediate.
+		</member>
 		<member name="directivity" type="bool" setter="set_directivity_on" getter="is_directivity_on" default="false">
 			Attenuates sound according to the source's orientation and weighted dipole pattern. The pattern is aligned with the source's local -Z forward axis.
+		</member>
+		<member name="direct_mix_level" type="float" setter="set_direct_mix_level" getter="get_direct_mix_level" default="1.0">
+			Gain applied to the processed direct signal before reflection and pathing signals are added. Set to 0 for reflection/pathing-only output, 1 for the normal level, or above 1 to boost it.
 		</member>
 		<member name="dipole_power" type="float" setter="set_dipole_power" getter="get_dipole_power" default="1.0">
 			Sharpness of the dipole directivity pattern. Higher values focus emission into narrower directions. Used only when [member directivity] is enabled.
@@ -80,6 +86,9 @@
 		<member name="pathing_mix_level" type="float" setter="set_pathing_mix_level" getter="get_pathing_mix_level" default="1.0">
 			Gain applied to the pathing wet mix. Baked pathing is used automatically when pathing data is present. For occluded sources, pathing is muted when a visible source/listener probe neighborhood cannot be guaranteed, including missing probe metadata, no visible influences, or eight or more occluded influences in the selected batch.
 		</member>
+		<member name="pathing_normalize_eq" type="bool" setter="set_pathing_eq_normalization_on" getter="is_pathing_eq_normalization_on" default="false">
+			Normalizes pathing's three frequency-band attenuation values by their largest value. This preserves the relative muffling between bands while restoring the loudest band to full level, reducing overly aggressive attenuation from the physical path model.
+		</member>
 		<member name="pathing_order" type="int" setter="set_pathing_order" getter="get_pathing_order" default="1">
 			Ambisonic order used to spatialize pathing, clamped to the simulator's allocated maximum. Audio uses the order of the completed simulation, not a setting changed while that simulation was running.
 		</member>
@@ -93,10 +102,16 @@
 			See [url=https://valvesoftware.github.io/steam-audio/doc/capi/simulation.html#_CPPv4N19IPLSimulationInputs15occlusionRadiusE]IPLSimulationInputs.occlusionRadius[/url].
 		</member>
 		<member name="occlusion_samples" type="int" setter="set_occlusion_samples" getter="get_occlusion_samples" default="32">
-			Number of samples used for volumetric occlusion. Higher values make partial occlusion smoother at greater simulation cost. Clamped at startup to [member SteamAudioConfig.max_occlusion_samples].
+			Number of samples used for volumetric occlusion. Higher values make partial occlusion smoother at greater simulation cost. Ignored by Raycast occlusion and clamped at startup to [member SteamAudioConfig.max_occlusion_samples].
+		</member>
+		<member name="occlusion_type" type="int" setter="set_occlusion_type" getter="get_occlusion_type" default="1">
+			Occlusion algorithm. Raycast traces one ray from source to listener and is cheaper. Volumetric samples the sphere configured by [member occlusion_radius] and [member occlusion_samples], producing smoother partial occlusion for larger sources.
 		</member>
 		<member name="reflection" type="bool" setter="set_reflection_on" getter="is_reflection_on" default="false">
 			Enables the reflected wet signal. Automatically uses listener-centric baked reverb when a usable reflection-bearing probe neighborhood is available, and otherwise falls back to real-time source reflections.
+		</member>
+		<member name="reflection_mix_level" type="float" setter="set_reflection_mix_level" getter="get_reflection_mix_level" default="1.0">
+			Gain applied to the reflected/reverb wet signal. Set to 0 to mute reflections without disabling their simulation, 1 for the normal level, or above 1 to boost them.
 		</member>
 		<member name="transmission_rays" type="int" setter="set_transmission_rays" getter="get_transmission_rays" default="16">
 			Number of rays used to estimate sound transmitted through occluding geometry. Higher values improve stability at increased simulation cost. Used only when [member occlusion] is enabled.

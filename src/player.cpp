@@ -45,12 +45,24 @@ void SteamAudioPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_occlusion_radius", "p_occlusion_radius"), &SteamAudioPlayer::set_occlusion_radius);
 	ClassDB::bind_method(D_METHOD("get_occlusion_samples"), &SteamAudioPlayer::get_occlusion_samples);
 	ClassDB::bind_method(D_METHOD("set_occlusion_samples", "p_occlusion_samples"), &SteamAudioPlayer::set_occlusion_samples);
+	ClassDB::bind_method(D_METHOD("get_occlusion_type"), &SteamAudioPlayer::get_occlusion_type);
+	ClassDB::bind_method(D_METHOD("set_occlusion_type", "p_occlusion_type"), &SteamAudioPlayer::set_occlusion_type);
 	ClassDB::bind_method(D_METHOD("get_transmission_rays"), &SteamAudioPlayer::get_transmission_rays);
 	ClassDB::bind_method(D_METHOD("set_transmission_rays", "p_transmission_rays"), &SteamAudioPlayer::set_transmission_rays);
 	ClassDB::bind_method(D_METHOD("get_ambisonics_order"), &SteamAudioPlayer::get_ambisonics_order);
 	ClassDB::bind_method(D_METHOD("set_ambisonics_order", "p_ambisonics_order"), &SteamAudioPlayer::set_ambisonics_order);
 	ClassDB::bind_method(D_METHOD("is_ambisonics_on"), &SteamAudioPlayer::is_ambisonics_on);
 	ClassDB::bind_method(D_METHOD("set_ambisonics_on", "p_ambisonics_on"), &SteamAudioPlayer::set_ambisonics_on);
+	ClassDB::bind_method(D_METHOD("get_direct_mix_level"), &SteamAudioPlayer::get_direct_mix_level);
+	ClassDB::bind_method(D_METHOD("set_direct_mix_level", "p_level"), &SteamAudioPlayer::set_direct_mix_level);
+	ClassDB::bind_method(D_METHOD("get_reflection_mix_level"), &SteamAudioPlayer::get_reflection_mix_level);
+	ClassDB::bind_method(D_METHOD("set_reflection_mix_level", "p_level"), &SteamAudioPlayer::set_reflection_mix_level);
+	ClassDB::bind_method(D_METHOD("are_effect_tails_on"), &SteamAudioPlayer::are_effect_tails_on);
+	ClassDB::bind_method(D_METHOD("set_effect_tails_on", "p_on"), &SteamAudioPlayer::set_effect_tails_on);
+
+	ADD_GROUP("Direct Sound", "");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "direct_mix_level", PROPERTY_HINT_RANGE, "0.0,4.0,0.01"), "set_direct_mix_level", "get_direct_mix_level");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "effect_tails"), "set_effect_tails_on", "are_effect_tails_on");
 
 	ADD_GROUP("Distance Attenuation", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "distance_attenuation"), "set_dist_attn_on", "is_dist_attn_on");
@@ -65,6 +77,7 @@ void SteamAudioPlayer::_bind_methods() {
 
 	ADD_GROUP("Occlusion and Transmission", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "occlusion"), "set_occlusion_on", "is_occlusion_on");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "occlusion_type", PROPERTY_HINT_ENUM, "Raycast,Volumetric"), "set_occlusion_type", "get_occlusion_type");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "occlusion_radius", PROPERTY_HINT_RANGE, "0.0,20.0,0.1"), "set_occlusion_radius", "get_occlusion_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "occlusion_samples", PROPERTY_HINT_RANGE, "0,512,1"), "set_occlusion_samples", "get_occlusion_samples");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "transmission_rays", PROPERTY_HINT_RANGE, "0,512,1"), "set_transmission_rays", "get_transmission_rays");
@@ -78,6 +91,7 @@ void SteamAudioPlayer::_bind_methods() {
 
 	ADD_GROUP("Reflection", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reflection"), "set_reflection_on", "is_reflection_on");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "reflection_mix_level", PROPERTY_HINT_RANGE, "0.0,4.0,0.01"), "set_reflection_mix_level", "get_reflection_mix_level");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "baked_reverb", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_baked_reverb_on", "is_baked_reverb_on");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "max_reflection_distance", PROPERTY_HINT_RANGE, "0.0,20000.0,0.1"), "set_max_reflection_distance", "get_max_reflection_distance");
 
@@ -93,6 +107,9 @@ void SteamAudioPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_pathing_mix_level"), &SteamAudioPlayer::get_pathing_mix_level);
 	ClassDB::bind_method(D_METHOD("set_pathing_mix_level", "p_level"), &SteamAudioPlayer::set_pathing_mix_level);
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "pathing_mix_level", PROPERTY_HINT_RANGE, "0.0,4.0,0.01"), "set_pathing_mix_level", "get_pathing_mix_level");
+	ClassDB::bind_method(D_METHOD("is_pathing_eq_normalization_on"), &SteamAudioPlayer::is_pathing_eq_normalization_on);
+	ClassDB::bind_method(D_METHOD("set_pathing_eq_normalization_on", "p_on"), &SteamAudioPlayer::set_pathing_eq_normalization_on);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pathing_normalize_eq"), "set_pathing_eq_normalization_on", "is_pathing_eq_normalization_on");
 	ClassDB::bind_method(D_METHOD("get_pathing_order"), &SteamAudioPlayer::get_pathing_order);
 	ClassDB::bind_method(D_METHOD("set_pathing_order", "p_order"), &SteamAudioPlayer::set_pathing_order);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pathing_order", PROPERTY_HINT_RANGE, "0,3,1"), "set_pathing_order", "get_pathing_order");
@@ -422,6 +439,8 @@ float SteamAudioPlayer::get_occlusion_radius() { return cfg.occ_radius; }
 void SteamAudioPlayer::set_occlusion_radius(float p_occlusion_radius) { cfg.occ_radius = p_occlusion_radius; cfg_dirty.store(true); }
 int SteamAudioPlayer::get_occlusion_samples() { return cfg.occ_samples; }
 void SteamAudioPlayer::set_occlusion_samples(int p_occlusion_samples) { cfg.occ_samples = p_occlusion_samples; cfg_dirty.store(true); }
+IPLOcclusionType SteamAudioPlayer::get_occlusion_type() { return cfg.occlusion_type; }
+void SteamAudioPlayer::set_occlusion_type(IPLOcclusionType p_occlusion_type) { cfg.occlusion_type = p_occlusion_type; cfg_dirty.store(true); }
 int SteamAudioPlayer::get_transmission_rays() { return cfg.transm_rays; }
 void SteamAudioPlayer::set_transmission_rays(int p_transmission_rays) { cfg.transm_rays = p_transmission_rays; cfg_dirty.store(true); }
 float SteamAudioPlayer::get_min_attenuation_dist() { return cfg.min_attn_dist; }
@@ -447,6 +466,12 @@ void SteamAudioPlayer::set_air_absorption_model_type(IPLAirAbsorptionModelType p
 
 bool SteamAudioPlayer::is_reflection_on() { return cfg.is_reflection_on; }
 void SteamAudioPlayer::set_reflection_on(bool p_reflection_on) { cfg.is_reflection_on = p_reflection_on; cfg_dirty.store(true); }
+bool SteamAudioPlayer::are_effect_tails_on() { return cfg.effect_tails; }
+void SteamAudioPlayer::set_effect_tails_on(bool p_on) { cfg.effect_tails = p_on; cfg_dirty.store(true); }
+float SteamAudioPlayer::get_direct_mix_level() { return cfg.direct_mix_level; }
+void SteamAudioPlayer::set_direct_mix_level(float p_level) { cfg.direct_mix_level = p_level; cfg_dirty.store(true); }
+float SteamAudioPlayer::get_reflection_mix_level() { return cfg.reflection_mix_level; }
+void SteamAudioPlayer::set_reflection_mix_level(float p_level) { cfg.reflection_mix_level = p_level; cfg_dirty.store(true); }
 bool SteamAudioPlayer::is_baked_reverb_on() { return true; }
 void SteamAudioPlayer::set_baked_reverb_on(bool) {}
 bool SteamAudioPlayer::is_occlusion_on() { return cfg.is_occlusion_on; }
@@ -469,6 +494,8 @@ bool SteamAudioPlayer::is_pathing_on() { return true; }
 void SteamAudioPlayer::set_pathing_on(bool) {}
 float SteamAudioPlayer::get_pathing_mix_level() { return cfg.pathing_mix_level; }
 void SteamAudioPlayer::set_pathing_mix_level(float p_level) { cfg.pathing_mix_level = p_level; cfg_dirty.store(true); }
+bool SteamAudioPlayer::is_pathing_eq_normalization_on() { return cfg.pathing_normalize_eq; }
+void SteamAudioPlayer::set_pathing_eq_normalization_on(bool p_on) { cfg.pathing_normalize_eq = p_on; cfg_dirty.store(true); }
 int SteamAudioPlayer::get_pathing_order() { return cfg.pathing_order; }
 void SteamAudioPlayer::set_pathing_order(int p_order) { cfg.pathing_order = p_order; cfg_dirty.store(true); }
 bool SteamAudioPlayer::is_pathing_validation_on() { return cfg.pathing_validation; }

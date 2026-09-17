@@ -149,7 +149,7 @@ void SteamAudioServer::tick() {
 		inputs.distanceAttenuationModel = attn_model;
 		inputs.airAbsorptionModel = absorp_model;
 		inputs.source = src_coords;
-		inputs.occlusionType = IPL_OCCLUSIONTYPE_VOLUMETRIC;
+		inputs.occlusionType = cfg_copy.occlusion_type;
 		inputs.occlusionRadius = cfg_copy.occ_radius;
 		inputs.numOcclusionSamples = cfg_copy.occ_samples;
 		inputs.numTransmissionRays = cfg_copy.transm_rays;

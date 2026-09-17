@@ -17,15 +17,9 @@ IPLAudioSettings create_audio_cfg() {
 	if (sample_rate <= 0) {
 		sample_rate = 48000;
 	}
-	int output_latency = ProjectSettings::get_singleton()->get_setting("audio/driver/output_latency");
-	if (output_latency <= 0) {
-		output_latency = 15;
-	}
-	int frame_size = closest_power_of_2(output_latency * sample_rate / 1000);
-	if (frame_size < 256) {
-		frame_size = 256;
-	}
-	return IPLAudioSettings{ sample_rate, frame_size };
+	// Godot processes AudioStreamPlayback and AudioEffect instances in fixed
+	// 512-frame blocks. Steam Audio effects require the creation-time size.
+	return IPLAudioSettings{ sample_rate, 512 };
 }
 
 IPLHRTF create_hrtf(IPLContext ctx, IPLAudioSettings audio_cfg) {

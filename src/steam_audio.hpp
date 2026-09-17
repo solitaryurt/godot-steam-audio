@@ -12,6 +12,7 @@
 using namespace godot;
 
 VARIANT_ENUM_CAST(IPLAirAbsorptionModelType);
+VARIANT_ENUM_CAST(IPLOcclusionType);
 VARIANT_ENUM_CAST(IPLTransmissionType);
 
 class SteamAudio {
@@ -47,6 +48,7 @@ struct SteamAudioSource {
 struct SteamAudioSourceConfig {
 	float occ_radius;
 	int occ_samples;
+	IPLOcclusionType occlusion_type;
 	int transm_rays;
 	float min_attn_dist;
 	int ambisonics_order;
@@ -60,11 +62,15 @@ struct SteamAudioSourceConfig {
 	bool is_ambisonics_on;
 	bool is_occlusion_on;
 	bool is_reflection_on;
+	bool effect_tails;
+	float direct_mix_level;
+	float reflection_mix_level;
 	IPLTransmissionType transmission_type;
 	bool is_directivity_on;
 	float dipole_weight;
 	float dipole_power;
 	float pathing_mix_level;
+	bool pathing_normalize_eq;
 	int pathing_order;
 	bool pathing_validation;
 	bool pathing_find_alternate;

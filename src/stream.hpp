@@ -41,6 +41,10 @@ private:
 	Ref<AudioStreamPlayback> stream_playback;
 
 	std::atomic<bool> is_active{false};
+	std::atomic<bool> needs_effect_reset{true};
+	std::atomic<bool> reflection_tail_remaining{false};
+	std::atomic<bool> reflection_decode_tail_remaining{false};
+	std::atomic<bool> path_tail_remaining{false};
 
 protected:
 	static void _bind_methods();

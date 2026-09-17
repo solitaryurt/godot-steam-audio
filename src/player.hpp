@@ -22,6 +22,7 @@ private:
 	SteamAudioSourceConfig cfg{
 		4.0f,
 		32,
+		IPLOcclusionType::IPL_OCCLUSIONTYPE_VOLUMETRIC,
 		16,
 		0.0f,
 		1,
@@ -35,11 +36,15 @@ private:
 		true,
 		true,
 		false,
+		true,
+		1.0f,
+		1.0f,
 		IPLTransmissionType::IPL_TRANSMISSIONTYPE_FREQDEPENDENT,
 		false,
 		0.0f,
 		1.0f,
 		1.0f,
+		false,
 		1,
 		false,
 		false,
@@ -76,6 +81,8 @@ public:
 	void set_occlusion_radius(float p_occlusion_radius);
 	int get_occlusion_samples();
 	void set_occlusion_samples(int p_occlusion_samples);
+	IPLOcclusionType get_occlusion_type();
+	void set_occlusion_type(IPLOcclusionType p_occlusion_type);
 	int get_transmission_rays();
 	void set_transmission_rays(int p_transmission_rays);
 	float get_min_attenuation_dist();
@@ -101,6 +108,12 @@ public:
 
 	bool is_reflection_on();
 	void set_reflection_on(bool p_reflection_on);
+	bool are_effect_tails_on();
+	void set_effect_tails_on(bool p_on);
+	float get_direct_mix_level();
+	void set_direct_mix_level(float p_level);
+	float get_reflection_mix_level();
+	void set_reflection_mix_level(float p_level);
 	bool is_baked_reverb_on();
 	void set_baked_reverb_on(bool p_baked_reverb_on);
 
@@ -124,6 +137,8 @@ public:
 	void set_pathing_on(bool p_pathing_on);
 	float get_pathing_mix_level();
 	void set_pathing_mix_level(float p_level);
+	bool is_pathing_eq_normalization_on();
+	void set_pathing_eq_normalization_on(bool p_on);
 	int get_pathing_order();
 	void set_pathing_order(int p_order);
 	bool is_pathing_validation_on();
