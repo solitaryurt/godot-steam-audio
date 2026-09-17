@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 import os
 
+cache_dir = os.environ.get("SCONS_CACHE_DIR")
+if cache_dir:
+    CacheDir(cache_dir)
+
 godot_cpp_path = "src/lib/godot-cpp"
 steam_audio_path = "src/lib/steamaudio"
 if (not (os.path.isdir(godot_cpp_path) and os.listdir(godot_cpp_path))) or (not (os.path.isdir(steam_audio_path) and os.listdir(steam_audio_path))):

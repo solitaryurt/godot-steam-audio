@@ -12,6 +12,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Cache Steam Audio SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/lib/steamaudio/include
+            src/lib/steamaudio/lib
+          key: steamaudio-4.8.1
+      - name: Cache SCons objects
+        uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          key: ${{ runner.os }}-scons-${{ hashFiles('.gitmodules', 'SConstruct') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-scons-${{ hashFiles('.gitmodules', 'SConstruct') }}-
+            ${{ runner.os }}-scons-
+      - name: Configure SCons cache
+        run: echo "SCONS_CACHE_DIR=$HOME/.scons_cache" >> "$GITHUB_ENV"
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
@@ -26,7 +43,9 @@ jobs:
           sudo apt-get install mingw-w64
           sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
           sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
-          make download-steam-audio
+          if [ ! -f src/lib/steamaudio/lib/linux-x64/libphonon.so ]; then
+            make download-steam-audio
+          fi
           cp src/lib/steamaudio/lib/linux-x64/* project/addons/godot-steam-audio/bin/
           cp src/lib/steamaudio/lib/windows-x64/* project/addons/godot-steam-audio/bin/
           cp src/lib/steamaudio/lib/android-armv8/* project/addons/godot-steam-audio/bin/android/arm64
@@ -55,16 +74,45 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Cache Steam Audio SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            src/lib/steamaudio/include
+            src/lib/steamaudio/lib
+          key: steamaudio-4.8.1
+      - name: Cache SCons objects
+        uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          key: ${{ runner.os }}-scons-${{ hashFiles('.gitmodules', 'SConstruct') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-scons-${{ hashFiles('.gitmodules', 'SConstruct') }}-
+            ${{ runner.os }}-scons-
+      - name: Cache iOS dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            project/addons/godot-steam-audio/bin/ios/libpffft.a
+            project/addons/godot-steam-audio/bin/ios/libmysofa.a
+          key: ${{ runner.os }}-ios-deps-${{ hashFiles('Makefile') }}
+      - name: Configure SCons cache
+        run: echo "SCONS_CACHE_DIR=$HOME/.scons_cache" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
       - name: install-deps
         run: |
           PIP_BREAK_SYSTEM_PACKAGES=1 python -m pip install scons==4.4.0
           scons --version
-          make download-steam-audio
+          if [ ! -f src/lib/steamaudio/lib/osx/libphonon.dylib ]; then
+            make download-steam-audio
+          fi
           cp -r src/lib/steamaudio/lib/osx/* project/addons/godot-steam-audio/bin/
           cp src/lib/steamaudio/lib/ios/* project/addons/godot-steam-audio/bin/ios/
       - name: build-ios-deps
-        run: make ios-deps
+        run: |
+          if [ ! -f project/addons/godot-steam-audio/bin/ios/libpffft.a ] || [ ! -f project/addons/godot-steam-audio/bin/ios/libmysofa.a ]; then
+            make ios-deps
+          fi
       - name: build
         run: |
           scons platform=macos target=template_debug && \
