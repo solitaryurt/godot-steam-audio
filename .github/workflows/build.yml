@@ -2,6 +2,9 @@ name: build-release
 run-name: Build release
 on: [push]
 
+permissions:
+  contents: write
+
 jobs:
   build-linux-windows-android:
     runs-on: ubuntu-22.04
@@ -97,6 +100,16 @@ jobs:
           cp -r project/addons godot-steam-audio/
           mkdir godot-steam-audio-demo
           cp -r project/* godot-steam-audio-demo/
+      - name: Create release zips
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="${COMMIT_SHORT_SHA}"
+          fi
+          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          (cd godot-steam-audio && zip -r "../godot-steam-audio-${VERSION}.zip" .)
+          (cd godot-steam-audio-demo && zip -r "../godot-steam-audio-demo-${VERSION}.zip" .)
       - uses: actions/upload-artifact@v4
         with:
           name: godot-steam-audio-${{ env.COMMIT_SHORT_SHA }}
@@ -105,3 +118,22 @@ jobs:
         with:
           name: godot-steam-audio-demo-${{ env.COMMIT_SHORT_SHA }}
           path: godot-steam-audio-demo/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-zips
+          path: "*.zip"
+
+  release:
+    needs: [package]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release zips
+        uses: actions/download-artifact@v4
+        with:
+          name: release-zips
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: "*.zip"
